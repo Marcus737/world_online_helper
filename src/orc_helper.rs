@@ -19,7 +19,7 @@ pub struct OcrItem {
 
 pub struct OcrServer {
     child: Child,
-    server_addr: String
+    server_addr: String,
 }
 
 impl OcrServer {
@@ -33,7 +33,10 @@ impl OcrServer {
 
         for _ in 0..60 {
             if std::net::TcpStream::connect(OCR_SERVER_ADDR).is_ok() {
-                return Ok(Self { child, server_addr: OCR_SERVER_ADDR.into() });
+                return Ok(Self {
+                    child,
+                    server_addr: OCR_SERVER_ADDR.into(),
+                });
             }
             std::thread::sleep(Duration::from_millis(500));
         }
@@ -64,30 +67,42 @@ pub struct OcrClient {
 
 impl OcrClient {
     pub fn new(server: &str) -> Self {
-        Self { server: server.into(), timeout: Duration::from_secs(60) }
+        Self {
+            server: server.into(),
+            timeout: Duration::from_secs(60),
+        }
     }
 
     pub fn with_timeout(server: &str, timeout: Duration) -> Self {
-        Self { server: server.into(), timeout }
+        Self {
+            server: server.into(),
+            timeout,
+        }
     }
 
     pub async fn recognize(&self, path: &str) -> io::Result<Vec<OcrItem>> {
         let s = time::timeout(Duration::from_secs(5), TcpStream::connect(&self.server))
-            .await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "connect"))??;
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "connect"))??;
         let mut s = s;
 
         time::timeout(Duration::from_secs(5), async {
             s.write_all(&(path.len() as u32).to_be_bytes()).await?;
             s.write_all(path.as_bytes()).await?;
             s.flush().await
-        }).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write"))??;
+        })
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write"))??;
 
         let raw = time::timeout(self.timeout, async {
-            let mut h = [0u8; 4]; s.read_exact(&mut h).await?;
+            let mut h = [0u8; 4];
+            s.read_exact(&mut h).await?;
             let mut b = vec![0u8; u32::from_be_bytes(h) as usize];
             s.read_exact(&mut b).await?;
             Ok::<_, io::Error>(String::from_utf8_lossy(&b).into_owned())
-        }).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "read"))??;
+        })
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "read"))??;
 
         Ok(serde_json::from_str(&raw)?)
     }

@@ -7,12 +7,11 @@ use crate::funs::{GameHelper, ItemType, Rarity};
 
 mod funs;
 mod mumu_manager;
-mod util;
 mod orc_helper;
+mod util;
 
 const MANAGER_PATH: &str = r"c:\Users\10401\software\MuMuPlayer\nx_main\MuMuManager.exe";
 const ADB_PATH: &str = r"C:\Users\10401\Desktop\lib\platform-tools\adb.exe";
-
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Msg {
@@ -88,7 +87,8 @@ async fn main() -> Result<()> {
     let client_num = 5;
     for i in 0..client_num {
         let vm_client = mumu_manager::VmClient::new(i, MANAGER_PATH);
-        let mut game_helper = GameHelper::new(vm_client, ocr_server.get_client(), Some(app_pkg_names[i])).await?;
+        let mut game_helper =
+            GameHelper::new(vm_client, ocr_server.get_client(), Some(app_pkg_names[i])).await?;
         game_helper.vm_client.set_layout_window(
             Some(x),
             Some(y),
@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
                         Msg::ClearBag => {
                             info!("{} 正在执行清理背包", i);
                             if let Err(e) = game_helper
-                                .sale_bag_items(
+                                .clear_bag_v2(
                                     &[Rarity::Common, Rarity::Fine],
                                     &[ItemType::Equipment],
                                     &FILTER_NAMES,
@@ -145,7 +145,6 @@ async fn main() -> Result<()> {
         });
     }
 
-
     thread::spawn(|| {
         fn send_all(sender_vec: &Vec<tokio::sync::mpsc::Sender<Msg>>, msg: Msg) {
             for sender in sender_vec {
@@ -180,7 +179,6 @@ async fn main() -> Result<()> {
         .unwrap();
     });
 
-    
     info!("主线程等待退出命令");
 
     main_recv.recv().await;
