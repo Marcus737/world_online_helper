@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Ok, Result, anyhow};
 use image::DynamicImage;
 use serde::{Deserialize, Serialize};
-use template_matching::{Extremes, Image, MatchTemplateMethod, TemplateMatcher, find_extremes};
+use template_matching::{Image, MatchTemplateMethod, TemplateMatcher, find_extremes};
 use tracing::{debug, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

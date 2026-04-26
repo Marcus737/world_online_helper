@@ -5,8 +5,7 @@ use tokio::net::TcpStream;
 use tokio::time;
 use tracing::debug;
 
-const SERVER_PATH: &str = r"C:\Users\10401\Desktop\rust_projects\shi_jie_ol_helper_v3\py_ocr";
-const OCR_SERVER_ADDR: &str = "127.0.0.1:9000";
+use crate::config_util;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct OcrItem {
@@ -17,6 +16,7 @@ pub struct OcrItem {
     pub height: u32,
 }
 
+
 pub struct OcrServer {
     child: Child,
     server_addr: String,
@@ -26,16 +26,18 @@ impl OcrServer {
     /// 启动 Python 服务器，阻塞等待端口可用后返回
     pub fn launch() -> io::Result<Self> {
         let mut child = Command::new("uv")
-            .current_dir(SERVER_PATH)
+            .current_dir(&config_util::OCR_CONFIG_INSTANCE.server_program_path)
             .arg("run")
             .arg("server.py")
+            .arg("127.0.0.1")
+            .arg(config_util::OCR_CONFIG_INSTANCE.server_port.to_string())
             .spawn()?;
-
+        let server_addr = format!("127.0.0.1:{}", &config_util::OCR_CONFIG_INSTANCE.server_port);
         for _ in 0..60 {
-            if std::net::TcpStream::connect(OCR_SERVER_ADDR).is_ok() {
+            if std::net::TcpStream::connect(&server_addr).is_ok() {
                 return Ok(Self {
                     child,
-                    server_addr: OCR_SERVER_ADDR.into(),
+                    server_addr,
                 });
             }
             std::thread::sleep(Duration::from_millis(500));
@@ -109,11 +111,13 @@ impl OcrClient {
 }
 
 mod test {
-    use super::*;
+    use crate::{config_util, orc_helper::OcrClient};
+
 
     #[tokio::test]
     async fn test_ocr() {
-        let orc_client = OcrClient::new("127.0.0.1:9000");
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port);
+        let orc_client = OcrClient::new(&server_addr);
         let res = orc_client.recognize(r"C:\Users\10401\Desktop\rust_projects\shi_jie_ol_helper_v3\sub_image_vm_index0.png").await.unwrap();
         println!("{:?}", res);
     }

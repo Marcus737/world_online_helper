@@ -77,10 +77,39 @@ impl GameHelperConfig {
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct OcrConfig {
+    pub server_program_path: String,
+    pub server_port: u16
+}
+
+pub static OCR_CONFIG_INSTANCE: LazyLock<OcrConfig> =
+    LazyLock::new(|| match OcrConfig::load_from_file() {
+        Ok(config) => config,
+        Err(e) => {
+            error!("加载 OCR 配置文件失败，请检查是否遗漏字段: {}", e);
+            panic!("load ocr config fail");
+        }
+    });
+
+impl OcrConfig {
+    pub fn load_from_file() -> anyhow::Result<Self> {
+        let conf = Config::builder()
+            // 指定文件路径
+            .add_source(File::with_name("config/ocr_config.toml").required(true))
+            // 支持环境变量覆盖，比如设置 OCR_SERVER_PORT=8080
+            .add_source(Environment::with_prefix("OCR").separator("_"))
+            .build()?;
+        
+        let config: OcrConfig = conf.try_deserialize()?;
+        Ok(config)
+    }
+}
+
 #[cfg(test)]
 mod test {
 
-    use crate::config_util::{APP_CONFIG_INSTANCE, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig};
+    use crate::config_util::{APP_CONFIG_INSTANCE, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig, OCR_CONFIG_INSTANCE, OcrConfig};
 
     #[test]
     fn test_get_app_config() {
@@ -96,4 +125,10 @@ mod test {
         println!("static config:{:?}", &*GAME_HELPER_CONFIG);
     }
 
+    #[test]
+    fn test_get_ocr_config() {
+        let config = OcrConfig::load_from_file().unwrap();
+        println!("{:?}", config);
+        println!("static config:{:?}", &*OCR_CONFIG_INSTANCE);
+    }
 }

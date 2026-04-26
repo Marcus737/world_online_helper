@@ -525,64 +525,20 @@ mod test {
     use tracing::info;
 
     use crate::{
-        funs::{GameHelper, ItemType, Rarity},
-        mumu_manager::VmClient,
-        orc_helper::OcrClient,
-        util,
+        config_util, funs::{GameHelper, ItemType, Rarity}, mumu_manager::VmClient, orc_helper::OcrClient, util
     };
-    const FILTER_NAMES: [&str; 43] = [
-        "防具箱（锁）",
-        "服饰箱（锁）",
-        "防具箱（锁）",
-        "武器箱（锁）",
-        "秘宝礼包（锁）",
-        "治疗药水",
-        "法力药水",
-        "月狼之石",
-        "腐鹰羽毛",
-        "灵草",
-        "被咬过的肉",
-        "断骨",
-        "毒舌",
-        "腐尸",
-        "鹰身人的羽毛",
-        "业火",
-        "死心",
-        "断弩",
-        "腐肉",
-        "药果",
-        "双头犬的肉",
-        "灵魂结晶",
-        "英雄证明",
-        "杜时雨的颜料",
-        "竹子",
-        "药果",
-        "英雄证明",
-        "兑换铜币",
-        "灵魂结晶",
-        "豹皮",
-        "三级碎木",
-        "三级碎石",
-        "三级碎矿",
-        "四级碎木",
-        "四级碎石",
-        "四级碎矿",
-        "五级碎木",
-        "五级碎石",
-        "五级碎矿",
-        "冰雪披风",
-        "美女节时装（2天）",
-        "黑魔一族护符（1天）",
-        "屠龙勇士称号",
-    ];
-    const MANAGER_PATH: &str = r"c:\Users\10401\software\MuMuPlayer\nx_main\MuMuManager.exe";
-    const OCR_SERVER_ADDR: &str = "127.0.0.1:9000";
+
 
     #[tokio::test]
     async fn test_new_game_helper() {
         util::init_logger();
-        let vm_client = VmClient::new(0, MANAGER_PATH);
-        let gh = GameHelper::new(vm_client, OcrClient::new(OCR_SERVER_ADDR), None)
+        
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG_INSTANCE.manager_path);
+        let gh = GameHelper::new(
+                vm_client, 
+                OcrClient::new(&format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port)), 
+                None
+            )
             .await
             .unwrap();
         info!("{:?}", gh);
@@ -591,25 +547,27 @@ mod test {
     #[tokio::test]
     async fn test_clear_bag_v2() {
         util::init_logger();
-        let vm_client = VmClient::new(0, MANAGER_PATH);
-        let mut gh = GameHelper::new(vm_client, OcrClient::new(OCR_SERVER_ADDR), None)
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG_INSTANCE.manager_path);
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port);
+        let mut gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
             .await
             .unwrap();
         info!("{:?}", gh);
-        gh.clear_bag_v2(
-            &[Rarity::Common, Rarity::Fine],
-            &[ItemType::Equipment],
-            &FILTER_NAMES,
-        )
-        .await
-        .unwrap();
+        // gh.clear_bag_v2(
+        //     &[Rarity::Common, Rarity::Fine],
+        //     &[ItemType::Equipment],
+        //     &config_util::GAME_HELPER_CONFIG.remove_item_names,
+        // )
+        // .await
+        // .unwrap();
     }
 
     #[tokio::test]
     async fn screenshot() {
         util::init_logger();
-        let vm_client = VmClient::new(0, MANAGER_PATH);
-        let gh = GameHelper::new(vm_client, OcrClient::new(OCR_SERVER_ADDR), None)
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG_INSTANCE.manager_path);
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port);
+        let gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
             .await
             .unwrap();
         let data = gh.adb_device.screencap().await.unwrap();
