@@ -85,11 +85,10 @@ pub fn get_current_item_info_v2(path: &str) -> Result<ItemInfo> {
 }
 
 fn need_remove(
-    info: &ItemInfo,
-    rarity_filter: &[Rarity],
-    item_type_filter: &[ItemType],
-    name_filter: &[&str],
+    info: &ItemInfo
 ) -> bool {
+    let name_filter = &config_util::GAME_HELPER_CONFIG.remove_item_names;
+
     //在名单上的直接删除
     if name_filter
         .into_iter()
@@ -98,6 +97,8 @@ fn need_remove(
         return true;
     }
 
+    let rarity_filter = &config_util::GAME_HELPER_CONFIG.remove_item_raritys;
+    let item_type_filter = &config_util::GAME_HELPER_CONFIG.remove_item_types;
     //根据稀有度和装备删除
     if let (Some(rarity), Some(item_type)) = (&info.rarity, &info.item_type) {
         let raity_exist = rarity_filter.into_iter().any(|r| r == rarity);
@@ -342,9 +343,6 @@ impl GameHelper {
     async fn handle_empty_grid(
         &mut self,
         set: &mut HashSet<(i32, i32)>,
-        rarity_filter: &[Rarity],
-        item_type_filter: &[ItemType],
-        name_filter: &[&str],
     ) -> Result<()> {
         //还可以优化，直接新旧两个图对比，精准找出不同位置
 
@@ -375,7 +373,7 @@ impl GameHelper {
             let item_info = get_current_item_info_v2(&path)?;
 
             //是否是可删除的
-            if need_remove(&item_info, rarity_filter, item_type_filter, name_filter) {
+            if need_remove(&item_info) {
                 self.remove_item(&input_img).await?;
                 continue;
             }
@@ -416,7 +414,7 @@ impl GameHelper {
                     let item_info = get_current_item_info_v2(&path)?;
 
                     //是否是可删除的
-                    if need_remove(&item_info, rarity_filter, item_type_filter, name_filter) {
+                    if need_remove(&item_info) {
                         self.remove_item(&input_img).await?;
                         continue;
                     }
@@ -437,12 +435,7 @@ impl GameHelper {
     }
 
     //自动打开箱子并清理背包
-    pub async fn clear_bag_v2(
-        &mut self,
-        rarity_filter: &[Rarity],
-        item_type_filter: &[ItemType],
-        name_filter: &[&str],
-    ) -> anyhow::Result<()> {
+    pub async fn clear_bag_v2(&mut self) -> anyhow::Result<()> {
         let mut empty_grid_set = HashSet::new();
         let pos_vec = get_bag_grid_center_pos_vec();
         let mut i = 0;
@@ -495,9 +488,6 @@ impl GameHelper {
                     //前面的空格子可能有物品
                     self.handle_empty_grid(
                         &mut empty_grid_set,
-                        rarity_filter,
-                        item_type_filter,
-                        name_filter,
                     )
                     .await?;
 
@@ -509,7 +499,7 @@ impl GameHelper {
             }
 
             //是否是可删除的
-            if need_remove(&item_info, rarity_filter, item_type_filter, name_filter) {
+            if need_remove(&item_info) {
                 debug!("当前格子可移除");
                 self.remove_item(&input_img).await?;
                 //当前格子为空，加入空格子列表
@@ -526,7 +516,7 @@ mod test {
     use tracing::info;
 
     use crate::{
-        config_util, funs::{GameHelper, ItemType, Rarity}, mumu_manager::VmClient, orc_helper::OcrClient, util
+        config_util, funs::GameHelper, mumu_manager::VmClient, orc_helper::OcrClient, util
     };
 
 
@@ -554,13 +544,9 @@ mod test {
             .await
             .unwrap();
         info!("{:?}", gh);
-        // gh.clear_bag_v2(
-        //     &[Rarity::Common, Rarity::Fine],
-        //     &[ItemType::Equipment],
-        //     &config_util::GAME_HELPER_CONFIG.remove_item_names,
-        // )
-        // .await
-        // .unwrap();
+        gh.clear_bag_v2()
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

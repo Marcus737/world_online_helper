@@ -104,13 +104,7 @@ async fn main() -> Result<()> {
                         Msg::Exit => break,
                         Msg::ClearBag => {
                             info!("{} 正在执行清理背包", i);
-                            if let Err(e) = game_helper
-                                .clear_bag_v2(
-                                    &[Rarity::Common, Rarity::Fine],
-                                    &[ItemType::Equipment],
-                                    &FILTER_NAMES,
-                                )
-                                .await
+                            if let Err(e) = game_helper.clear_bag_v2().await
                             {
                                 error!("{} ClearBag error:{}", i, e)
                             }
