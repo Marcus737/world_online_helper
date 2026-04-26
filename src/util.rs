@@ -33,7 +33,7 @@ pub fn init_logger() {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Point {
+pub struct OcrPoint {
     pub x: u32,
     pub y: u32,
     pub center_x: u32,
@@ -89,7 +89,7 @@ impl ImageHelper {
         &mut self,
         input: &DynamicImage,
         template_name: &str,
-    ) -> Result<Option<Point>> {
+    ) -> Result<Option<OcrPoint>> {
         let template_img = self
             .loaded_imgs
             .get(template_name)
@@ -119,7 +119,7 @@ impl ImageHelper {
             return Ok(None);
         }
 
-        let point = Point {
+        let point = OcrPoint {
             x: extremes.min_value_location.0,
             y: extremes.min_value_location.1,
             center_x: extremes.min_value_location.0 + template_img.width() / 2,
@@ -134,7 +134,7 @@ impl ImageHelper {
         input_path: &str,
         template_path: &str,
         method: MatchTemplateMethod,
-    ) -> Result<Option<Point>> {
+    ) -> Result<Option<OcrPoint>> {
         let input = image::open(input_path)?;
         let template = image::open(template_path)?;
         self.get_template_img_pos(&input, &template, method)
@@ -145,7 +145,7 @@ impl ImageHelper {
         input: &DynamicImage,
         template: &DynamicImage,
         method: MatchTemplateMethod,
-    ) -> Result<Option<Point>> {
+    ) -> Result<Option<OcrPoint>> {
         self.matcher.match_template(
             Image::from(&input.to_luma32f()),
             Image::from(&template.to_luma32f()),
@@ -168,7 +168,7 @@ impl ImageHelper {
             return Ok(None);
         }
 
-        let point = Point {
+        let point = OcrPoint {
             x: extremes.min_value_location.0,
             y: extremes.min_value_location.1,
             center_x: extremes.min_value_location.0 + template.width() / 2,
@@ -239,6 +239,31 @@ impl CommandOutput {
         Ok(command_output)
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32
+}
+
+impl Point {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Size {
+    pub width: usize,
+    pub height: usize
+}
+
+impl Size {
+    pub fn new(width: usize, height: usize) -> Self{
+        Self { width, height }
+    }
+}
+
 
 #[cfg(test)]
 mod test {

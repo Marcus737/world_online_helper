@@ -6,9 +6,7 @@ use std::{
 };
 
 use crate::{
-    mumu_manager::VmClient,
-    orc_helper::OcrClient,
-    util::{self, ImageHelper},
+    config_util, mumu_manager::VmClient, orc_helper::OcrClient, util::{self, ImageHelper, Point}
 };
 use anyhow::{Result, anyhow};
 use droidrun_adb::AdbServer;
@@ -16,53 +14,20 @@ use image::{DynamicImage, GenericImage};
 use thiserror::Error;
 use tracing::{debug, info};
 
-const EQUIPMENT_NAME_VEC: [&str; 26] = [
-    "链",
-    "戒",
-    "时装",
-    "衣",
-    "护手",
-    "鞋",
-    "裤",
-    "腰带",
-    "背",
-    "头",
-    "肩",
-    "护符",
-    "坐骑",
-    "副手",
-    "单手刀",
-    "单手剑",
-    "双手刀",
-    "双手剑",
-    "法器",
-    "法杖",
-    "轻弩",
-    "重型武器",
-    "重弩",
-    "长柄武器",
-    "弓箭",
-    "杖",
-];
 
-const BAG_BUTTON_POS: [i32; 2] = [320, 1220];
-const BAG_FIRST_GRID_CENTER_POS: [i32; 2] = [50, 810];
-const BAG_GRID_WIDTH: i32 = 90;
-const BAG_GRID_HIEGHT: i32 = 90;
-const BACK_POS: [i32; 2] = [320, 40];
-const BAG_POS_1: [i32; 2] = [80, 670];
-const BAG_POS_2: [i32; 2] = [200, 670];
-
-fn get_bag_grid_center_pos_vec() -> Vec<(i32, i32)> {
+fn get_bag_grid_center_pos_vec() -> Vec<Point> {
+    let point = &config_util::GAME_HELPER_CONFIG.bag_first_grid_center_pos;
+    let size = &config_util::GAME_HELPER_CONFIG.bag_grid_size;
+    let (mut x, mut y) = (point.x, point.y);
     let mut v = vec![];
-    let mut current = (BAG_FIRST_GRID_CENTER_POS[0], BAG_FIRST_GRID_CENTER_POS[1]);
+
     for _ in 0..4 {
         for _ in 0..8 {
-            v.push(current);
-            current.0 += BAG_GRID_WIDTH;
+            v.push(Point::new(x, y));
+            x += size.width as i32;
         }
-        current.1 += BAG_GRID_HIEGHT;
-        current.0 = BAG_FIRST_GRID_CENTER_POS[0]
+        y += size.height as i32;
+        x = point.x as i32;
     }
     v.pop();
     v.pop();
@@ -152,8 +117,6 @@ pub enum ItemType {
     Consumable,
     //建筑材料
     BuildingMaterials,
-    //宝石
-    Gem,
     //特殊
     SpecialItem,
     //宠物
@@ -170,13 +133,15 @@ impl TryFrom<&str> for ItemType {
     type Error = ParseItemTypeError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let vector= &config_util::GAME_HELPER_CONFIG.equipment_names;
+
         let it = match s {
             s if s.contains("任务物品") => Self::QuestItem,
             s if s.contains("道具") => Self::Consumable,
             s if s.contains("建筑材料") => Self::BuildingMaterials,
             s if s.contains("特殊") => Self::SpecialItem,
             s if s.contains("宠") => Self::Pet,
-            s if EQUIPMENT_NAME_VEC.iter().any(|name| s.contains(name)) => Self::Equipment,
+            s if vector.iter().any(|name| s.contains(name)) => Self::Equipment,
             _ => return Err(ParseItemTypeError::InvalidItemType(s.to_string())),
         };
 
@@ -365,6 +330,14 @@ impl GameHelper {
         Ok(info)
     }
 
+    async fn click_blank_pos_for_close(&mut self) -> anyhow::Result<()> {
+        let point = &config_util::GAME_HELPER_CONFIG.back_pos;
+        //点击空白位置关闭界面
+        self.adb_device.tap(point.x as i32, point.y as i32).await?;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Ok(())
+    }
+
     async fn handle_empty_grid(
         &mut self,
         set: &mut HashSet<(i32, i32)>,
@@ -378,9 +351,8 @@ impl GameHelper {
         //遍历之前的每个空格子
         for pos in set.iter() {
             let (x, y) = pos;
-            //点击空白位置关闭界面
-            self.adb_device.tap(BACK_POS[0], BACK_POS[1]).await?;
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            
+            self.click_blank_pos_for_close().await?;
 
             //点击格子
             self.adb_device.tap(*x, *y).await?;
@@ -421,8 +393,8 @@ impl GameHelper {
                     tokio::time::sleep(Duration::from_millis(300)).await;
 
                     //点击空白位置关闭界面
-                    self.adb_device.tap(BACK_POS[0], BACK_POS[1]).await?;
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    self.click_blank_pos_for_close().await?;
+
                     //再次点击格子
                     self.adb_device.tap(*x, *y).await?;
                     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -478,16 +450,15 @@ impl GameHelper {
                 break;
             }
 
-            let (x, y) = pos_vec[i];
+            let Point{x, y} = pos_vec[i];
             //下一格子
             i += 1;
 
             //点击空白位置关闭界面
-            self.adb_device.tap(BACK_POS[0], BACK_POS[1]).await?;
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            self.click_blank_pos_for_close().await?;
 
             //点击当前格子
-            self.adb_device.tap(x, y).await?;
+            self.adb_device.tap(x as i32, y as i32).await?;
             tokio::time::sleep(Duration::from_millis(200)).await;
 
             let input_img = image::load_from_memory(&self.adb_device.screencap().await?)?;

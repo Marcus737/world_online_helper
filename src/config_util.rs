@@ -1,8 +1,11 @@
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
 use anyhow;
+use config::{Config, Environment, File};
 use serde::Deserialize;
 use tracing::error;
+
+use crate::util::{Point, Size};
 
 pub static APP_CONFIG_INSTANCE: LazyLock<AppConfig> =
     LazyLock::new(|| match AppConfig::load_from_file() {
@@ -12,6 +15,15 @@ pub static APP_CONFIG_INSTANCE: LazyLock<AppConfig> =
             panic!("load app config fail");
         }
     });
+
+
+/// 全局单例配置：第一次访问时自动加载，加载失败则 panic
+pub static GAME_HELPER_CONFIG: LazyLock<GameHelperConfig> = LazyLock::new(|| {
+    GameHelperConfig::load_from_file().unwrap_or_else(|e| {
+        error!("加载 GameHelperConfig 失败: {}", e);
+        panic!("加载 game_helper 配置文件失败");
+    })
+});
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
@@ -34,19 +46,54 @@ impl AppConfig {
             .add_source(config::File::with_name("config/app_config.toml").required(true))
             .add_source(config::Environment::with_prefix("APP").separator("__"))
             .build()?;
+
         let app_config: AppConfig = conf.try_deserialize()?;
         Ok(app_config)
     }
 }
 
+
+#[derive(Debug, Deserialize)]
+pub struct GameHelperConfig {
+    pub bag_button_pos: Point,
+    pub bag_first_grid_center_pos: Point,
+    pub bag_grid_size: Size,
+    pub back_pos: Point,
+    pub bag_1_pos: Point,
+    pub bag_2_pos: Point,
+    pub equipment_names: Vec<String>,
+    pub remove_item_names: Vec<String>,
+}
+
+impl GameHelperConfig {
+    /// 从 config/game_helper.toml 加载配置，支持环境变量覆盖
+    pub fn load_from_file() -> anyhow::Result<Self> {
+        let conf = Config::builder()
+            .add_source(File::with_name("config/game_helper.toml").required(true))
+            .add_source(Environment::with_prefix("GAME_HELPER").separator("__"))
+            .build()?;
+        let config: GameHelperConfig = conf.try_deserialize()?;
+        Ok(config)
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::config_util::{APP_CONFIG_INSTANCE, AppConfig};
+
+    use crate::config_util::{APP_CONFIG_INSTANCE, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig};
 
     #[test]
     fn test_get_app_config() {
         let config = AppConfig::load_from_file().unwrap();
         println!("{:?}", config);
-        println!("static config:{:?}", APP_CONFIG_INSTANCE.app_package_names);
+        println!("static config:{:?}", &*APP_CONFIG_INSTANCE);
     }
+
+    #[test]
+    fn test_get_game_helper_config() {
+        let config = GameHelperConfig::load_from_file().unwrap();
+        println!("{:?}", config);
+        println!("static config:{:?}", &*GAME_HELPER_CONFIG);
+    }
+
 }

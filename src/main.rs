@@ -1,7 +1,7 @@
-use std::{thread, time::Duration};
+use std::{thread};
 
 use anyhow::Result;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::funs::{GameHelper, ItemType, Rarity};
 
