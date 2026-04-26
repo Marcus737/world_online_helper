@@ -84,3 +84,34 @@ remove_item_names = [
     "黑魔一族护符（1天）",
     "屠龙勇士称号"
 ]
+
+#    普通
+#    Common,
+#    精致
+#    Fine,
+#    稀有
+#    Rare,
+#    史诗
+#    Epic,
+#    传说
+#    Legendary,
+remove_item_raritys = [
+    "Common",
+    "Fine",
+]
+
+# 装备
+# Equipment,
+# 任务物品
+# QuestItem,
+# 道具消耗品
+# Consumable,
+# 建筑材料
+# BuildingMaterials,
+# 特殊
+# SpecialItem,
+# 宠物
+# Pet,
+remove_item_types = [
+    "Equipment"
+]

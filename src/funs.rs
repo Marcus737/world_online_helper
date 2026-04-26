@@ -11,6 +11,7 @@ use crate::{
 use anyhow::{Result, anyhow};
 use droidrun_adb::AdbServer;
 use image::{DynamicImage, GenericImage};
+use serde::Deserialize;
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -107,7 +108,7 @@ fn need_remove(
     false
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub enum ItemType {
     //装备
     Equipment,
@@ -149,7 +150,7 @@ impl TryFrom<&str> for ItemType {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub enum Rarity {
     //普通
     Common,

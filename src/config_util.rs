@@ -5,7 +5,7 @@ use config::{Config, Environment, File};
 use serde::Deserialize;
 use tracing::error;
 
-use crate::util::{Point, Size};
+use crate::{funs::{ItemType, Rarity}, util::{Point, Size}};
 
 pub static APP_CONFIG_INSTANCE: LazyLock<AppConfig> =
     LazyLock::new(|| match AppConfig::load_from_file() {
@@ -63,6 +63,9 @@ pub struct GameHelperConfig {
     pub bag_2_pos: Point,
     pub equipment_names: Vec<String>,
     pub remove_item_names: Vec<String>,
+    pub remove_item_types: Vec<ItemType>,
+    pub remove_item_raritys: Vec<Rarity>
+    
 }
 
 impl GameHelperConfig {
