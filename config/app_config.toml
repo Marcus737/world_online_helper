@@ -1,0 +1,23 @@
+# 模拟器管理器路径
+manager_path = "c:\\Users\\10401\\software\\MuMuPlayer\\nx_main\\MuMuManager.exe"
+
+# ADB 路径
+adb_path = "C:\\Users\\10401\\Desktop\\lib\\platform-tools\\adb.exe"
+
+# 创建 Mumu 模拟器的数量
+vm_client_num = 5
+
+# 模拟器启动后要运行的 app 包名列表
+app_package_names = [
+    "com.lori.app",
+    "com.lori.app.a",
+    "com.lori.app.b",
+    "com.lori.app.c",
+    "com.lori.app.d",
+]
+
+# 模拟器窗口大小 (宽度, 高度)
+vm_client_window_size = [370, 720]
+
+# 第一个模拟器窗口起始位置 (x, y)
+first_vm_client_pos = [0, 0]

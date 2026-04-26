@@ -5,13 +5,13 @@ use tracing::{debug, error, info};
 
 use crate::funs::{GameHelper, ItemType, Rarity};
 
+mod config_util;
 mod funs;
 mod mumu_manager;
 mod orc_helper;
 mod util;
 
-const MANAGER_PATH: &str = r"c:\Users\10401\software\MuMuPlayer\nx_main\MuMuManager.exe";
-const ADB_PATH: &str = r"C:\Users\10401\Desktop\lib\platform-tools\adb.exe";
+const CHANNLE_MAX_MSG_SIZE: usize = 100;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Msg {
@@ -66,29 +66,25 @@ const FILTER_NAMES: [&str; 37] = [
 async fn main() -> Result<()> {
     util::init_logger();
 
+    let app_config = config_util::AppConfig::load_from_file()?;
+
     info!("start adb server");
-    util::run_command(ADB_PATH, vec!["start-server"])?;
+    util::run_command(&app_config.adb_path, vec!["start-server"])?;
 
     info!("start ocr server");
     let ocr_server = orc_helper::OcrServer::launch()?;
 
-    let (main_send, mut main_recv) = tokio::sync::mpsc::channel::<Msg>(100);
+    let (main_send, mut main_recv) = tokio::sync::mpsc::channel::<Msg>(CHANNLE_MAX_MSG_SIZE);
     let mut sender_vec = vec![];
 
-    let app_pkg_names = [
-        "com.lori.app",
-        "com.lori.app.a",
-        "com.lori.app.b",
-        "com.lori.app.c",
-        "com.lori.app.d",
-    ];
+
     let (win_width, win_height) = (370, 720);
     let (mut x, y) = (0, 0);
     let client_num = 5;
     for i in 0..client_num {
-        let vm_client = mumu_manager::VmClient::new(i, MANAGER_PATH);
+        let vm_client = mumu_manager::VmClient::new(i, &app_config.manager_path);
         let mut game_helper =
-            GameHelper::new(vm_client, ocr_server.get_client(), Some(app_pkg_names[i])).await?;
+            GameHelper::new(vm_client, ocr_server.get_client(), Some(&app_config.app_package_names[i])).await?;
         game_helper.vm_client.set_layout_window(
             Some(x),
             Some(y),
@@ -97,7 +93,7 @@ async fn main() -> Result<()> {
         )?;
         x += win_width;
 
-        let (send, mut recv) = tokio::sync::mpsc::channel::<Msg>(100);
+        let (send, mut recv) = tokio::sync::mpsc::channel::<Msg>(CHANNLE_MAX_MSG_SIZE);
         sender_vec.push(send);
 
         tokio::spawn(async move {
