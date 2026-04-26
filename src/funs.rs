@@ -1,8 +1,5 @@
 use std::{
-    collections::HashSet,
-    env,
-    fmt::Debug,
-    time::{Duration, SystemTime},
+    collections::HashSet, env, fmt::Debug, sync::LazyLock, time::{Duration, SystemTime}
 };
 
 use crate::{
@@ -10,10 +7,12 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use droidrun_adb::AdbServer;
-use image::{DynamicImage, GenericImage};
+use image::{DynamicImage, GenericImage, GenericImageView};
 use serde::Deserialize;
 use thiserror::Error;
 use tracing::{debug, info};
+
+static BAG_GRID_CENTER_POS_VEC:LazyLock<Vec<Point>> = LazyLock::new(|| get_bag_grid_center_pos_vec());
 
 
 fn get_bag_grid_center_pos_vec() -> Vec<Point> {
@@ -25,10 +24,10 @@ fn get_bag_grid_center_pos_vec() -> Vec<Point> {
     for _ in 0..4 {
         for _ in 0..8 {
             v.push(Point::new(x, y));
-            x += size.width as i32;
+            x += size.width;
         }
-        y += size.height as i32;
-        x = point.x as i32;
+        y += size.height;
+        x = point.x;
     }
     v.pop();
     v.pop();
@@ -61,27 +60,6 @@ fn save_detail_rect_img(input: &DynamicImage, id: String) -> Result<String> {
     } else {
         return Err(anyhow!("not found sub rect"));
     }
-}
-
-pub fn get_current_item_info_v2(path: &str) -> Result<ItemInfo> {
-    debug!("path:{}", path);
-
-    let start = SystemTime::now();
-    let output = util::run_command_with_work_dir(
-        "uv",
-        r"C:\Users\10401\Desktop\rust_projects\shi_jie_ol_helper_v3\py_ocr\",
-        vec!["run", "main.py", path],
-    )?;
-    info!(
-        "ocr use time: {:?}",
-        SystemTime::now().duration_since(start)
-    );
-    let ocr_result = output.std_out_str;
-    let ocr_result = ocr_result.replace(" ", "");
-    debug!("ocr_result: {}", ocr_result);
-
-    let info = ItemInfo::new(ocr_result);
-    Ok(info)
 }
 
 fn need_remove(
@@ -285,6 +263,7 @@ impl GameHelper {
         })
     }
 
+
     async fn remove_item(&mut self, input: &DynamicImage) -> Result<()> {
         debug!("{} 正在删除", self.vm_client.get_vm_index());
         //找出售按钮
@@ -336,7 +315,7 @@ impl GameHelper {
         let point = &config_util::GAME_HELPER_CONFIG.back_pos;
         //点击空白位置关闭界面
         self.adb_device.tap(point.x as i32, point.y as i32).await?;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(())
     }
 
@@ -370,7 +349,7 @@ impl GameHelper {
 
             //获取格子信息
             let path = save_detail_rect_img(&input_img, self.vm_client.get_vm_index())?;
-            let item_info = get_current_item_info_v2(&path)?;
+            let item_info = self.get_current_item_info_v3(&path).await?;
 
             //是否是可删除的
             if need_remove(&item_info) {
@@ -411,7 +390,7 @@ impl GameHelper {
 
                     //获取格子信息
                     let path = save_detail_rect_img(&input_img, self.vm_client.get_vm_index())?;
-                    let item_info = get_current_item_info_v2(&path)?;
+                    let item_info = self.get_current_item_info_v3(&path).await?;
 
                     //是否是可删除的
                     if need_remove(&item_info) {
@@ -431,6 +410,116 @@ impl GameHelper {
             set.remove(&e);
         });
 
+        Ok(())
+    }
+
+    pub async fn handle_change_grid(&mut self, bag_img: DynamicImage) -> anyhow::Result<()> {
+
+        let new_bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
+  
+
+        let pos_vec = &*BAG_GRID_CENTER_POS_VEC;
+
+        let cmp_len = 20;
+        let th = 0.9;
+        //对比这些格子周围的像素 10 * 10
+        for Point { x, y } in pos_vec {
+            let mut same_cnt = 0;
+            for i in 0..cmp_len {
+                for j in 0..cmp_len {
+                    let pi = *x as u32 + i;
+                    let pj = *y as u32 + j;
+                    if bag_img.get_pixel(pi, pj).eq(&new_bag_img.get_pixel(pi, pj)) {
+                        same_cnt += 1;
+                    }
+                }
+            }
+            if (same_cnt as f32 / (cmp_len * cmp_len) as f32) < th {
+                //当前格子内容变化了
+                self.clear_bag_v3_inner(*x, *y).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32)-> Result<bool> {
+        //点击空白关闭界面
+        self.click_blank_pos_for_close().await?;
+
+        //点击当前格子
+        self.adb_device.tap(x, y).await?;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        //背包格子详情
+        let bag_grid_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
+
+        //只要详细信息的部分部分
+        let path = save_detail_rect_img(&bag_grid_img, self.vm_client.get_vm_index())?;
+        let item_info = self.get_current_item_info_v3(&path).await?;
+        debug!("item_info：{:?}", item_info);
+
+        //如果是空格子就跳过
+        if let None = self.image_helper.get_template_img_pos_by_name(&bag_grid_img, "温馨提示2")? {
+            debug!("当前格子为空");
+            // empty_grid_set.insert(Point::new(x, y));
+            self.click_blank_pos_for_close().await?;
+            return Ok(false);
+        };
+
+
+        //如果当前格子是消耗品就使用
+        if let Some(LockAttr::UnLocked) = item_info.lock_attr {
+            debug!("当前格子为消耗品");
+            //点击开启
+            if let Some(point) = self
+                .image_helper
+                .get_template_img_pos_by_name(&bag_grid_img, "按钮_使用2")?
+            {
+                self.adb_device
+                    .tap(point.center_x as i32, point.center_y as i32)
+                    .await?;
+                //等待反应
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                self.click_blank_pos_for_close().await?;
+                return Ok(true);
+            } else {
+                return Err(anyhow!("找不到使用按钮"));
+            }
+        }
+
+        //是否是可删除的
+        if need_remove(&item_info) {
+            debug!("当前格子可移除");
+            // empty_grid_set.insert(Point::new(x, y));
+            self.remove_item(&bag_grid_img).await?;
+            self.click_blank_pos_for_close().await?;
+            return Ok(false);
+        }
+
+        self.click_blank_pos_for_close().await?;
+        Ok(false)
+    }
+
+    pub async fn clear_bag_v3(&mut self) -> anyhow::Result<()>{
+        let pos_vec = &*BAG_GRID_CENTER_POS_VEC;
+        let mut i = 0;
+        // let mut empty_grid_vec = HashSet::new();
+        while i < pos_vec.len() {
+            let Point { x, y } = pos_vec[i];
+            i += 1;
+            //点击空白位置关闭界面
+            self.click_blank_pos_for_close().await?;
+            //背包界面
+            let bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
+
+            if self.clear_bag_v3_inner(x, y).await? {
+                //当前是消耗品，需要额外处理
+                self.handle_change_grid(bag_img).await?;
+                //再次检查
+                i -= 1;
+            }
+        }
         Ok(())
     }
 
@@ -468,7 +557,7 @@ impl GameHelper {
 
             //获取格子信息
             let path = save_detail_rect_img(&input_img, self.vm_client.get_vm_index())?;
-            let item_info = get_current_item_info_v2(&path)?;
+            let item_info = self.get_current_item_info_v3(&path).await?;
             debug!("item_info：{:?}", item_info);
 
             //如果当前格子是消耗品就使用
@@ -524,10 +613,10 @@ mod test {
     async fn test_new_game_helper() {
         util::init_logger();
         
-        let vm_client = VmClient::new(0, &config_util::APP_CONFIG_INSTANCE.manager_path);
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
         let gh = GameHelper::new(
                 vm_client, 
-                OcrClient::new(&format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port)), 
+                OcrClient::new(&format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port)), 
                 None
             )
             .await
@@ -538,8 +627,8 @@ mod test {
     #[tokio::test]
     async fn test_clear_bag_v2() {
         util::init_logger();
-        let vm_client = VmClient::new(0, &config_util::APP_CONFIG_INSTANCE.manager_path);
-        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port);
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
         let mut gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
             .await
             .unwrap();
@@ -550,10 +639,24 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_clear_bag_v3() {
+        util::init_logger();
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
+        let mut gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
+            .await
+            .unwrap();
+        info!("{:?}", gh);
+        gh.clear_bag_v3()
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
     async fn screenshot() {
         util::init_logger();
-        let vm_client = VmClient::new(0, &config_util::APP_CONFIG_INSTANCE.manager_path);
-        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port);
+        let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
         let gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
             .await
             .unwrap();

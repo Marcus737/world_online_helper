@@ -26,13 +26,13 @@ impl OcrServer {
     /// 启动 Python 服务器，阻塞等待端口可用后返回
     pub fn launch() -> io::Result<Self> {
         let mut child = Command::new("uv")
-            .current_dir(&config_util::OCR_CONFIG_INSTANCE.server_program_path)
+            .current_dir(&config_util::OCR_CONFIG.server_program_path)
             .arg("run")
             .arg("server.py")
             .arg("127.0.0.1")
-            .arg(config_util::OCR_CONFIG_INSTANCE.server_port.to_string())
+            .arg(config_util::OCR_CONFIG.server_port.to_string())
             .spawn()?;
-        let server_addr = format!("127.0.0.1:{}", &config_util::OCR_CONFIG_INSTANCE.server_port);
+        let server_addr = format!("127.0.0.1:{}", &config_util::OCR_CONFIG.server_port);
         for _ in 0..60 {
             if std::net::TcpStream::connect(&server_addr).is_ok() {
                 return Ok(Self {
@@ -116,7 +116,7 @@ mod test {
 
     #[tokio::test]
     async fn test_ocr() {
-        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG_INSTANCE.server_port);
+        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
         let orc_client = OcrClient::new(&server_addr);
         let res = orc_client.recognize(r"C:\Users\10401\Desktop\rust_projects\shi_jie_ol_helper_v3\sub_image_vm_index0.png").await.unwrap();
         println!("{:?}", res);

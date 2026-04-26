@@ -3,7 +3,7 @@ use std::{thread};
 use anyhow::Result;
 use tracing::{error, info};
 
-use crate::funs::{GameHelper, ItemType, Rarity};
+use crate::funs::GameHelper;
 
 mod config_util;
 mod funs;
@@ -22,46 +22,6 @@ enum Msg {
     TurnBacK,
 }
 
-const FILTER_NAMES: [&str; 37] = [
-    "防具箱（锁）",
-    "服饰箱（锁）",
-    "防具箱（锁）",
-    "治疗药水",
-    "法力药水",
-    "月狼之石",
-    "腐鹰羽毛",
-    "灵草",
-    "被咬过的肉",
-    "断骨",
-    "毒舌",
-    "腐尸",
-    "鹰身人的羽毛",
-    "业火",
-    "死心",
-    "断弩",
-    "腐肉",
-    "药果",
-    "双头犬的肉",
-    "灵魂结晶",
-    "英雄证明",
-    "杜时雨的颜料",
-    "竹子",
-    "药果",
-    "英雄证明",
-    "兑换铜币",
-    "灵魂结晶",
-    "豹皮",
-    "三级碎木",
-    "三级碎石",
-    "三级碎矿",
-    "四级碎木",
-    "四级碎石",
-    "四级碎矿",
-    "五级碎木",
-    "五级碎石",
-    "五级碎矿",
-];
-
 #[tokio::main]
 async fn main() -> Result<()> {
     util::init_logger();
@@ -74,24 +34,26 @@ async fn main() -> Result<()> {
     info!("start ocr server");
     let ocr_server = orc_helper::OcrServer::launch()?;
 
+
+    let (win_width, win_height)  = &app_config.vm_client_window_size;
+    let (x, y) = &app_config.first_vm_client_pos;
+    let mut x2 = *x;
+    let client_num = *&app_config.vm_client_num;
+
     let (main_send, mut main_recv) = tokio::sync::mpsc::channel::<Msg>(CHANNLE_MAX_MSG_SIZE);
     let mut sender_vec = vec![];
 
-
-    let (win_width, win_height) = (370, 720);
-    let (mut x, y) = (0, 0);
-    let client_num = 5;
     for i in 0..client_num {
         let vm_client = mumu_manager::VmClient::new(i, &app_config.manager_path);
         let mut game_helper =
             GameHelper::new(vm_client, ocr_server.get_client(), Some(&app_config.app_package_names[i])).await?;
         game_helper.vm_client.set_layout_window(
-            Some(x),
-            Some(y),
-            Some(win_width),
-            Some(win_height),
+            Some(x2),
+            Some(*y),
+            Some(*win_width),
+            Some(*win_height),
         )?;
-        x += win_width;
+        x2 += win_width;
 
         let (send, mut recv) = tokio::sync::mpsc::channel::<Msg>(CHANNLE_MAX_MSG_SIZE);
         sender_vec.push(send);
@@ -103,17 +65,12 @@ async fn main() -> Result<()> {
                     match msg {
                         Msg::Exit => break,
                         Msg::ClearBag => {
-                            info!("{} 正在执行清理背包", i);
                             if let Err(e) = game_helper.clear_bag_v2().await
                             {
                                 error!("{} ClearBag error:{}", i, e)
                             }
                         }
                         Msg::ClickTaskButton => {
-                            info!("{} 点击任务按钮", i);
-                            // if let Err(e) = game_helper.click_task_button().await {
-                            //     error!("{} ClickTaskButton error:{}", i, e);
-                            // }
                             if let Err(e) = game_helper.adb_device.keyevent(12).await {
                                 error!("点击任务按钮失败:{}", e);
                             };

@@ -65,10 +65,10 @@ impl VmClient {
 
     pub fn set_layout_window(
         &self,
-        x: Option<u32>,
-        y: Option<u32>,
-        height: Option<u32>,
-        width: Option<u32>,
+        x: Option<usize>,
+        y: Option<usize>,
+        height: Option<usize>,
+        width: Option<usize>,
     ) -> Result<()> {
         // 构建动态参数列表，使用 Vec<String> 方便动态添加
         let mut args = vec![

@@ -36,7 +36,8 @@ equipment_names = [
     "重弩",
     "长柄武器",
     "弓箭",
-    "杖"
+    "杖",
+    "腰"
 ]
 
 remove_item_names = [

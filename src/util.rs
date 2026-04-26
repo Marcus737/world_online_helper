@@ -240,7 +240,7 @@ impl CommandOutput {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
 pub struct Point {
     pub x: i32,
     pub y: i32
@@ -254,12 +254,12 @@ impl Point {
 
 #[derive(Debug, Deserialize)]
 pub struct Size {
-    pub width: usize,
-    pub height: usize
+    pub width: i32,
+    pub height: i32
 }
 
 impl Size {
-    pub fn new(width: usize, height: usize) -> Self{
+    pub fn new(width: i32, height: i32) -> Self{
         Self { width, height }
     }
 }

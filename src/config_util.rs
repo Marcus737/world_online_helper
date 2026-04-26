@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::sync::LazyLock;
 
 use anyhow;
 use config::{Config, Environment, File};
@@ -7,7 +7,7 @@ use tracing::error;
 
 use crate::{funs::{ItemType, Rarity}, util::{Point, Size}};
 
-pub static APP_CONFIG_INSTANCE: LazyLock<AppConfig> =
+pub static APP_CONFIG: LazyLock<AppConfig> =
     LazyLock::new(|| match AppConfig::load_from_file() {
         Ok(config) => config,
         Err(e) => {
@@ -16,14 +16,6 @@ pub static APP_CONFIG_INSTANCE: LazyLock<AppConfig> =
         }
     });
 
-
-/// 全局单例配置：第一次访问时自动加载，加载失败则 panic
-pub static GAME_HELPER_CONFIG: LazyLock<GameHelperConfig> = LazyLock::new(|| {
-    GameHelperConfig::load_from_file().unwrap_or_else(|e| {
-        error!("加载 GameHelperConfig 失败: {}", e);
-        panic!("加载 game_helper 配置文件失败");
-    })
-});
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
@@ -52,6 +44,13 @@ impl AppConfig {
     }
 }
 
+/// 全局单例配置：第一次访问时自动加载，加载失败则 panic
+pub static GAME_HELPER_CONFIG: LazyLock<GameHelperConfig> = LazyLock::new(|| {
+    GameHelperConfig::load_from_file().unwrap_or_else(|e| {
+        error!("加载 GameHelperConfig 失败: {}", e);
+        panic!("加载 game_helper 配置文件失败");
+    })
+});
 
 #[derive(Debug, Deserialize)]
 pub struct GameHelperConfig {
@@ -86,7 +85,7 @@ pub struct OcrConfig {
     pub server_port: u16
 }
 
-pub static OCR_CONFIG_INSTANCE: LazyLock<OcrConfig> =
+pub static OCR_CONFIG: LazyLock<OcrConfig> =
     LazyLock::new(|| match OcrConfig::load_from_file() {
         Ok(config) => config,
         Err(e) => {
@@ -112,13 +111,13 @@ impl OcrConfig {
 #[cfg(test)]
 mod test {
 
-    use crate::config_util::{APP_CONFIG_INSTANCE, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig, OCR_CONFIG_INSTANCE, OcrConfig};
+    use crate::config_util::{APP_CONFIG, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig, OCR_CONFIG, OcrConfig};
 
     #[test]
     fn test_get_app_config() {
         let config = AppConfig::load_from_file().unwrap();
         println!("{:?}", config);
-        println!("static config:{:?}", &*APP_CONFIG_INSTANCE);
+        println!("static config:{:?}", &*APP_CONFIG);
     }
 
     #[test]
@@ -132,6 +131,6 @@ mod test {
     fn test_get_ocr_config() {
         let config = OcrConfig::load_from_file().unwrap();
         println!("{:?}", config);
-        println!("static config:{:?}", &*OCR_CONFIG_INSTANCE);
+        println!("static config:{:?}", &*OCR_CONFIG);
     }
 }
