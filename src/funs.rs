@@ -616,13 +616,15 @@ impl GameHelper {
     }
 
 
-    pub async fn auto_click_task(&mut self) -> Result<()>{
-
-        if let Some(join_handle) = self.auto_click_task_handle.take() {
-            join_handle.abort();
-            info!("已关闭自动点击任务");
+    pub async fn auto_click_task(&mut self, on: bool) -> Result<()>{
+        if !on {
+            if let Some(join_handle) = self.auto_click_task_handle.take() {
+                join_handle.abort();
+                info!("已关闭自动点击任务");
+            }
             return Ok(());
         }
+
         //判断是否有组队
         let queue_button_pos = (135, 230);
         self.adb_device.tap(queue_button_pos.0, queue_button_pos.1).await?;

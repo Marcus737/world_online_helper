@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
 
         tokio::spawn(async move {
             info!("异步任务{}已开启", i);
+            let mut auto_click_task_button_on = true;
             loop {
                 if let Some(msg) = recv.recv().await {
                     match msg {
@@ -84,9 +85,10 @@ async fn main() -> Result<()> {
                             // if let Err(e) = game_helper.adb_device.keyevent(4).await {
                             //     error!("点击返回按钮失败:{}", e);
                             // };
-                            if let Err(e) = game_helper.auto_click_task().await {
+                            if let Err(e) = game_helper.auto_click_task(auto_click_task_button_on).await {
                                 error!("自动点击任务失败:{}", e);
                             }
+                            auto_click_task_button_on = !auto_click_task_button_on;
                         }
                     }
                 }
