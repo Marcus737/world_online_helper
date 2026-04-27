@@ -66,10 +66,9 @@ async fn main() -> Result<()> {
                     match msg {
                         Msg::Exit => break,
                         Msg::ClearBag => {
-                            if let Err(e) = game_helper.clear_bag_v2().await
-                            {
+                            if let Err(e) = game_helper.clear_bag_v3().await {
                                 error!("{} ClearBag error:{}", i, e)
-                            }
+                            };
                         }
                         Msg::ClickTaskButton => {
                             if let Err(e) = game_helper.adb_device.keyevent(12).await {
@@ -82,9 +81,6 @@ async fn main() -> Result<()> {
                             }
                         }
                         Msg::AutoClickTaskButton => {
-                            // if let Err(e) = game_helper.adb_device.keyevent(4).await {
-                            //     error!("点击返回按钮失败:{}", e);
-                            // };
                             if let Err(e) = game_helper.auto_click_task(auto_click_task_button_on).await {
                                 error!("自动点击任务失败:{}", e);
                             }

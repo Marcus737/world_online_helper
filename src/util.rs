@@ -100,7 +100,7 @@ impl ImageHelper {
                 return Ok(Some(ocr_point));
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
             if SystemTime::now().duration_since(start_time)?.gt(&timeout) {
                 return Err(anyhow!("timeout target img not find"));
             }
@@ -130,7 +130,7 @@ impl ImageHelper {
         debug!("extremes:{:?}", extremes);
 
         //min_value<300
-        if extremes.min_value > 200.0 {
+        if extremes.min_value > 100.0 {
             return Ok(None);
         }
 

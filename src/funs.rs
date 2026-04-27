@@ -1,9 +1,9 @@
 use std::{
-    collections::HashSet, env, fmt::Debug, path::Path, sync::{LazyLock, atomic::AtomicBool}, time::{Duration, SystemTime}
+    env, fmt::Debug, path::Path, time::{Duration, SystemTime}
 };
 
 use crate::{
-    config_util, mumu_manager::VmClient, orc_helper::OcrClient, util::{self, ImageHelper, Point}
+    config_util, mumu_manager::VmClient, orc_helper::OcrClient, util::{ImageHelper, Point}
 };
 use anyhow::{Result, anyhow};
 use droidrun_adb::AdbServer;
@@ -13,8 +13,7 @@ use thiserror::Error;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-static BAG_GRID_CENTER_POS_VEC:LazyLock<Vec<Point>> = LazyLock::new(|| get_bag_grid_center_pos_vec());
-
+// static BAG_GRID_CENTER_POS_VEC:LazyLock<Vec<Point>> = LazyLock::new(|| get_bag_grid_center_pos_vec());
 
 fn get_bag_grid_center_pos_vec() -> Vec<Point> {
     let point = &config_util::GAME_HELPER_CONFIG.bag_first_grid_center_pos;
@@ -269,6 +268,9 @@ impl GameHelper {
 
     async fn remove_item(&mut self, input: &DynamicImage) -> Result<()> {
         debug!("{} 正在删除", self.vm_client.get_vm_index());
+        // if let None= self.image_helper.get_template_img_pos_by_name(input, "温馨提示2")? {
+        //     return Err(anyhow!("当前界面不是详情界面"));
+        // }
         //找出售按钮
         if let Some(point) = self
             .image_helper
@@ -304,7 +306,7 @@ impl GameHelper {
 
         let start = SystemTime::now();
         let items = self.ocr_client.recognize(path).await?;
-        debug!("ocr items:{:?}", items);
+        // debug!("ocr items:{:?}", items);
         info!(
             "ocr use time: {:?}",
             SystemTime::now().duration_since(start)
@@ -322,129 +324,37 @@ impl GameHelper {
         Ok(())
     }
 
-    async fn handle_empty_grid(
-        &mut self,
-        set: &mut HashSet<(i32, i32)>,
-    ) -> Result<()> {
-        //还可以优化，直接新旧两个图对比，精准找出不同位置
-
-        let mut need_remove_pos_vec = vec![];
-        //遍历之前的每个空格子
-        for pos in set.iter() {
-            let (x, y) = pos;
-            
-            self.click_blank_pos_for_close().await?;
-
-            //点击格子
-            self.adb_device.tap(*x, *y).await?;
-            tokio::time::sleep(Duration::from_millis(200)).await;
-
-            //截图
-            let input_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
-
-            //如果是空格子就跳过
-            if let None = self
-                .image_helper
-                .get_template_img_pos_by_name(&input_img, "温馨提示2")?
-            {
-                continue;
-            }
-
-            //获取格子信息
-            let path = save_detail_rect_img(&input_img, self.vm_client.get_vm_index())?;
-            let item_info = self.get_current_item_info_v3(&path).await?;
-
-            //是否是可删除的
-            if need_remove(&item_info) {
-                self.remove_item(&input_img).await?;
-                continue;
-            }
-
-            //如果当前格子是消耗品就使用
-            if let Some(LockAttr::UnLocked) = item_info.lock_attr {
-                //点击开启
-                if let Some(point) = self
-                    .image_helper
-                    .get_template_img_pos_by_name(&input_img, "按钮_使用2")?
-                {
-                    self.adb_device
-                        .tap(point.center_x as i32, point.center_y as i32)
-                        .await?;
-                    //等待反应
-                    tokio::time::sleep(Duration::from_millis(300)).await;
-
-                    //点击空白位置关闭界面
-                    self.click_blank_pos_for_close().await?;
-
-                    //再次点击格子
-                    self.adb_device.tap(*x, *y).await?;
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                    //再次判断，这次一定不会是消耗品
-                    //截图
-                    let input_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
-
-                    //如果是空格子就跳过
-                    if let None = self
-                        .image_helper
-                        .get_template_img_pos_by_name(&input_img, "温馨提示2")?
-                    {
-                        continue;
-                    }
-
-                    //获取格子信息
-                    let path = save_detail_rect_img(&input_img, self.vm_client.get_vm_index())?;
-                    let item_info = self.get_current_item_info_v3(&path).await?;
-
-                    //是否是可删除的
-                    if need_remove(&item_info) {
-                        self.remove_item(&input_img).await?;
-                        continue;
-                    }
-                } else {
-                    return Err(anyhow!("找不到使用按钮"));
-                }
-
-                //当前位置是不变物品
-                need_remove_pos_vec.push(*pos);
-            }
-        }
-        //去除不可变物品位置
-        need_remove_pos_vec.into_iter().for_each(|e| {
-            set.remove(&e);
-        });
-
-        Ok(())
-    }
+    
 
     pub async fn handle_change_grid(&mut self, bag_img: DynamicImage) -> anyhow::Result<()> {
         //先确保当前界面是背包界面
-        self.image_helper.loop_find_image(
-            "移动仓库2", 
-            Duration::from_secs(5),
-            || async  {
-                let point = &config_util::GAME_HELPER_CONFIG.back_pos;
-                //点击空白位置关闭界面
-                self.adb_device.tap(point.x as i32, point.y as i32).await?;
-                tokio::time::sleep(Duration::from_millis(300)).await;
-                Ok(image::load_from_memory(&self.adb_device.screencap().await?)?)
-            }
-        )
-        .await?
-        .ok_or(anyhow!("找不到背包界面"))?;
+        // self.image_helper.loop_find_image(
+        //     "背包_移动仓库2", 
+        //     Duration::from_secs(5),
+        //     || async  {
+        //         let point = &config_util::GAME_HELPER_CONFIG.back_pos;
+        //         //点击空白位置关闭界面
+        //         self.adb_device.tap(point.x as i32, point.y as i32).await?;
+        //         tokio::time::sleep(Duration::from_millis(300)).await;
+        //         Ok(image::load_from_memory(&self.adb_device.screencap().await?)?)
+        //     }
+        // )
+        // .await?
+        // .ok_or(anyhow!("找不到背包界面"))?;
 
         //截图
         let new_bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
-        let pos_vec = &*BAG_GRID_CENTER_POS_VEC;
+        let pos_vec = get_bag_grid_center_pos_vec();
 
         let cmp_len = 20;
         let th = 0.8;
-        //对比这些格子周围的像素 10 * 10
+        //对比这些格子周围的像素 20 * 20
         for Point { x, y } in pos_vec {
             let mut same_cnt = 0;
             for i in 0..cmp_len {
                 for j in 0..cmp_len {
-                    let pi = *x as u32 + i;
-                    let pj = *y as u32 + j;
+                    let pi = x as u32 + i;
+                    let pj = y as u32 + j;
                     if bag_img.get_pixel(pi, pj).eq(&new_bag_img.get_pixel(pi, pj)) {
                         same_cnt += 1;
                     }
@@ -452,20 +362,24 @@ impl GameHelper {
             }
             if (same_cnt as f32 / (cmp_len * cmp_len) as f32) < th {
                 //当前格子内容变化了
-                self.clear_bag_v3_inner(*x, *y).await?;
+                self.clear_bag_v3_inner(x, y).await?;
             }
         }
 
         Ok(())
     }
 
-    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32)-> Result<bool> {
+    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32)-> Result<()> {
         //点击空白关闭界面
         self.click_blank_pos_for_close().await?;
 
+        //先截图背包界面
+        let old_bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
+
         //点击当前格子
         self.adb_device.tap(x, y).await?;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        //休眠时间要大，不然会把箭头截进去
+        tokio::time::sleep(Duration::from_millis(400)).await;
 
         //背包格子详情
         let bag_grid_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
@@ -478,11 +392,19 @@ impl GameHelper {
         //如果是空格子就跳过
         if let None = self.image_helper.get_template_img_pos_by_name(&bag_grid_img, "温馨提示2")? {
             debug!("当前格子为空");
-            // empty_grid_set.insert(Point::new(x, y));
             self.click_blank_pos_for_close().await?;
-            return Ok(false);
+            return Ok(());
         };
 
+
+        //是否是可删除的
+        if need_remove(&item_info) {
+            debug!("当前格子可移除");
+            // empty_grid_set.insert(Point::new(x, y));
+            self.remove_item(&bag_grid_img).await?;
+            self.click_blank_pos_for_close().await?;
+            return Ok(());
+        }
 
         //如果当前格子是消耗品就使用
         if let Some(LockAttr::UnLocked) = item_info.lock_attr {
@@ -498,120 +420,39 @@ impl GameHelper {
                 //等待反应
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 self.click_blank_pos_for_close().await?;
-                return Ok(true);
+
+
+                // 【唯一修改点】：在这里使用 Box::pin 打破交叉递归
+                Box::pin(self.handle_change_grid(old_bag_img)).await?;
+                return Ok(());
             } else {
                 return Err(anyhow!("找不到使用按钮"));
             }
         }
 
-        //是否是可删除的
-        if need_remove(&item_info) {
-            debug!("当前格子可移除");
-            // empty_grid_set.insert(Point::new(x, y));
-            self.remove_item(&bag_grid_img).await?;
-            self.click_blank_pos_for_close().await?;
-            return Ok(false);
-        }
-
         self.click_blank_pos_for_close().await?;
-        Ok(false)
-    }
 
-    pub async fn clear_bag_v3(&mut self) -> anyhow::Result<()>{
-        let pos_vec = &*BAG_GRID_CENTER_POS_VEC;
-        let mut i = 0;
-        // let mut empty_grid_vec = HashSet::new();
-        while i < pos_vec.len() {
-            let Point { x, y } = pos_vec[i];
-            i += 1;
-            //点击空白位置关闭界面
-            self.click_blank_pos_for_close().await?;
-            //背包界面
-            let bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
-
-            if self.clear_bag_v3_inner(x, y).await? {
-                //当前是消耗品，需要额外处理
-                self.handle_change_grid(bag_img).await?;
-                //再次检查
-                i -= 1;
-            }
-        }
         Ok(())
     }
 
-    //自动打开箱子并清理背包
-    pub async fn clear_bag_v2(&mut self) -> anyhow::Result<()> {
-        let mut empty_grid_set = HashSet::new();
-        let pos_vec = get_bag_grid_center_pos_vec();
-        let mut i = 0;
-        loop {
-            if i >= pos_vec.len() {
-                break;
-            }
-
-            let Point{x, y} = pos_vec[i];
-            //下一格子
-            i += 1;
-
-            //点击空白位置关闭界面
-            self.click_blank_pos_for_close().await?;
-
-            //点击当前格子
-            self.adb_device.tap(x as i32, y as i32).await?;
-            tokio::time::sleep(Duration::from_millis(200)).await;
-
-            let input_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
-            //如果是空格子就跳过
-            if let None = self
-                .image_helper
-                .get_template_img_pos_by_name(&input_img, "温馨提示2")?
-            {
-                debug!("当前格子为空");
-                empty_grid_set.insert((x, y));
-                continue;
-            }
-
-            //获取格子信息
-            let path = save_detail_rect_img(&input_img, self.vm_client.get_vm_index())?;
-            let item_info = self.get_current_item_info_v3(&path).await?;
-            debug!("item_info：{:?}", item_info);
-
-            //如果当前格子是消耗品就使用
-            if let Some(LockAttr::UnLocked) = item_info.lock_attr {
-                debug!("当前格子为消耗品");
-                //点击开启
-                if let Some(point) = self
-                    .image_helper
-                    .get_template_img_pos_by_name(&input_img, "按钮_使用2")?
-                {
-                    self.adb_device
-                        .tap(point.center_x as i32, point.center_y as i32)
-                        .await?;
-                    //等待反应
-                    tokio::time::sleep(Duration::from_millis(300)).await;
-
-                    //前面的空格子可能有物品
-                    self.handle_empty_grid(
-                        &mut empty_grid_set,
-                    )
-                    .await?;
-
-                    //再次判断当前位置
-                    i -= 1;
-                } else {
-                    return Err(anyhow!("找不到使用按钮"));
-                }
-            }
-
-            //是否是可删除的
-            if need_remove(&item_info) {
-                debug!("当前格子可移除");
-                self.remove_item(&input_img).await?;
-                //当前格子为空，加入空格子列表
-                empty_grid_set.insert((x, y));
-                continue;
-            }
+    pub async fn clear_bag_v3(&mut self) -> anyhow::Result<()>{
+        //点击背包1
+        let bag1_pos = &config_util::GAME_HELPER_CONFIG.bag_1_pos;
+        self.adb_device.tap(bag1_pos.x, bag1_pos.y).await?;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        for p in get_bag_grid_center_pos_vec() {
+             self.clear_bag_v3_inner(p.x, p.y).await?
         }
+
+        self.click_blank_pos_for_close().await?;
+
+        let bag2_pos = &config_util::GAME_HELPER_CONFIG.bag_2_pos;
+        self.adb_device.tap(bag2_pos.x, bag2_pos.y).await?;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        for Point{x, y} in get_bag_grid_center_pos_vec() {
+             self.clear_bag_v3_inner(x, y).await?
+        }
+
         Ok(())
     }
 
@@ -636,8 +477,7 @@ impl GameHelper {
             info!("当前是队员状态，不需要自动点击任务");
             return Ok(());
         }
-        //关闭界面
-        self.click_blank_pos_for_close().await?;
+
         
         let adb_client_clone = self.adb_device.clone();
         let handle = tokio::spawn(async move {
@@ -731,20 +571,6 @@ mod test {
             .await
             .unwrap();
         info!("{:?}", gh);
-    }
-
-    #[tokio::test]
-    async fn test_clear_bag_v2() {
-        util::init_logger();
-        let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
-        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
-        let mut gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
-            .await
-            .unwrap();
-        info!("{:?}", gh);
-        gh.clear_bag_v2()
-        .await
-        .unwrap();
     }
 
     #[tokio::test]
