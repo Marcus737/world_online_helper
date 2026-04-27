@@ -3,7 +3,7 @@ use std::{
     ffi::OsStr,
     fmt::Debug,
     fs,
-    process::{Command, Output},
+    process::{Command, Output}, time::{Duration, SystemTime},
 };
 
 use anyhow::{Ok, Result, anyhow};
@@ -85,6 +85,28 @@ impl ImageHelper {
         })
     }
 
+    pub async fn loop_find_image<F>(
+        &mut self,
+        template_name: &str,
+        timeout: Duration,
+        mut get_img_fun: F,
+    ) -> Result<Option<OcrPoint>> 
+    where F : AsyncFnMut() -> anyhow::Result<DynamicImage>
+    {
+        let start_time = SystemTime::now();
+        loop {
+            let now_img = get_img_fun().await?;
+            if let Some(ocr_point) = self.get_template_img_pos_by_name(&now_img, template_name)? {
+                return Ok(Some(ocr_point));
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if SystemTime::now().duration_since(start_time)?.gt(&timeout) {
+                return Err(anyhow!("timeout target img not find"));
+            }
+        }
+    }
+
     pub fn get_template_img_pos_by_name(
         &mut self,
         input: &DynamicImage,
@@ -108,14 +130,7 @@ impl ImageHelper {
         debug!("extremes:{:?}", extremes);
 
         //min_value<300
-        if extremes.min_value > 300.0 {
-            return Ok(None);
-        }
-
-        //一定大于100且小于图片得高度减去100
-        if extremes.min_value_location.1 < 100
-            || extremes.min_value_location.1 > input.height() - 100
-        {
+        if extremes.min_value > 200.0 {
             return Ok(None);
         }
 

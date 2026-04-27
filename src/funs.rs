@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet, env, fmt::Debug, sync::LazyLock, time::{Duration, SystemTime}
+    collections::HashSet, env, fmt::Debug, path::Path, sync::{LazyLock, atomic::AtomicBool}, time::{Duration, SystemTime}
 };
 
 use crate::{
@@ -10,7 +10,8 @@ use droidrun_adb::AdbServer;
 use image::{DynamicImage, GenericImage, GenericImageView};
 use serde::Deserialize;
 use thiserror::Error;
-use tracing::{debug, info};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, info};
 
 static BAG_GRID_CENTER_POS_VEC:LazyLock<Vec<Point>> = LazyLock::new(|| get_bag_grid_center_pos_vec());
 
@@ -228,6 +229,7 @@ pub struct GameHelper {
     image_helper: ImageHelper,
     ocr_client: OcrClient,
     pub adb_device: droidrun_adb::AdbDevice,
+    auto_click_task_handle: Option<JoinHandle<()>>
 }
 
 impl GameHelper {
@@ -260,6 +262,7 @@ impl GameHelper {
             image_helper: ImageHelper::new()?,
             adb_device,
             ocr_client,
+            auto_click_task_handle: None
         })
     }
 
@@ -414,14 +417,27 @@ impl GameHelper {
     }
 
     pub async fn handle_change_grid(&mut self, bag_img: DynamicImage) -> anyhow::Result<()> {
+        //先确保当前界面是背包界面
+        self.image_helper.loop_find_image(
+            "移动仓库2", 
+            Duration::from_secs(5),
+            || async  {
+                let point = &config_util::GAME_HELPER_CONFIG.back_pos;
+                //点击空白位置关闭界面
+                self.adb_device.tap(point.x as i32, point.y as i32).await?;
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                Ok(image::load_from_memory(&self.adb_device.screencap().await?)?)
+            }
+        )
+        .await?
+        .ok_or(anyhow!("找不到背包界面"))?;
 
+        //截图
         let new_bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
-  
-
         let pos_vec = &*BAG_GRID_CENTER_POS_VEC;
 
         let cmp_len = 20;
-        let th = 0.9;
+        let th = 0.8;
         //对比这些格子周围的像素 10 * 10
         for Point { x, y } in pos_vec {
             let mut same_cnt = 0;
@@ -598,10 +614,101 @@ impl GameHelper {
         }
         Ok(())
     }
+
+
+    pub async fn auto_click_task(&mut self) -> Result<()>{
+
+        if let Some(join_handle) = self.auto_click_task_handle.take() {
+            join_handle.abort();
+            info!("已关闭自动点击任务");
+            return Ok(());
+        }
+        //判断是否有组队
+        let queue_button_pos = (135, 230);
+        self.adb_device.tap(queue_button_pos.0, queue_button_pos.1).await?;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let input = image::load_from_memory(&self.adb_device.screencap().await?)?;
+
+        if let Some(_) = self.image_helper.get_template_img_pos_by_name(&input, "离开队伍")? {
+            info!("当前是队员状态，不需要自动点击任务");
+            return Ok(());
+        }
+        //关闭界面
+        self.click_blank_pos_for_close().await?;
+        
+        let adb_client_clone = self.adb_device.clone();
+        let handle = tokio::spawn(async move {
+            let target_img = match image::open(Path::new("res/任务按钮存在.png")) {
+                Ok(img) => img,
+                Err(e) => {
+                    error!("加载任务存在按钮图片失败:{}", e);
+                    return;
+                },
+            };
+            let threshold = 0.8;
+            loop {
+                let data = match adb_client_clone.screencap().await {
+                    Ok(data) => data,
+                    Err(e) => {
+                        error!("获取屏幕截图失败:{}", e);
+                        return ;
+                    },
+                };
+
+                let input_img = match image::load_from_memory(&data) {
+                    Ok(img) => img,
+                    Err(e) => {
+                        error!("从内存加载图片失败:{}", e);
+                        return ;
+                    },
+                };
+                //对比图片
+                let height = 60;
+                let input_img_height = input_img.height();
+                let start_j =input_img_height / 2;
+
+                let mut same_cnt = 0;
+                for j in start_j..input_img_height - height {
+                    for k in 0..height {
+                        if input_img.get_pixel(150, j + k).eq(&target_img.get_pixel(0, k)) {
+                            same_cnt += 1;
+                        }
+                    }
+                    let confidence = same_cnt as f32 / height as f32;
+                    // debug!("confidence:{}", confidence);
+                    if confidence > threshold {
+                        //屏幕存在任务按钮，发送事件
+                        info!("屏幕存在任务按钮，点击");
+                        if let Err(e) = adb_client_clone.keyevent(12).await {
+                            error!("发送输入事件失败:{}", e);
+                            return ;
+                        };
+                        break;
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            }
+
+        });
+        self.auto_click_task_handle = Some(handle);
+        info!("已开启自动点击任务");
+        Ok(())
+    }
+}
+
+impl Drop for GameHelper {
+    fn drop(&mut self) {
+        if let Some(handle) = self.auto_click_task_handle.take() {
+            handle.abort();
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use image::GenericImage;
     use tracing::info;
 
     use crate::{
@@ -661,9 +768,11 @@ mod test {
             .await
             .unwrap();
         let data = gh.adb_device.screencap().await.unwrap();
-        image::load_from_memory(&data)
-            .unwrap()
-            .save("test_scfeenshot.png")
+        let mut img = image::load_from_memory(&data)
             .unwrap();
+
+        img.sub_image(150, 680, 1, 90).to_image().save("任务按钮存在.png").unwrap();
+
+        img.save("test_scfeenshot.png").unwrap();
     }
 }

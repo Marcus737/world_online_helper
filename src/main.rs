@@ -19,7 +19,7 @@ enum Msg {
     ClearBag,
     ClickTaskButton,
     AutoFight,
-    TurnBacK,
+    AutoClickTaskButton,
 }
 
 #[tokio::main]
@@ -80,10 +80,13 @@ async fn main() -> Result<()> {
                                 error!("点击自动战斗失败:{}", e);
                             }
                         }
-                        Msg::TurnBacK => {
-                            if let Err(e) = game_helper.adb_device.keyevent(4).await {
-                                error!("点击返回按钮失败:{}", e);
-                            };
+                        Msg::AutoClickTaskButton => {
+                            // if let Err(e) = game_helper.adb_device.keyevent(4).await {
+                            //     error!("点击返回按钮失败:{}", e);
+                            // };
+                            if let Err(e) = game_helper.auto_click_task().await {
+                                error!("自动点击任务失败:{}", e);
+                            }
                         }
                     }
                 }
@@ -117,7 +120,7 @@ async fn main() -> Result<()> {
                         send_all(&sender_vec, Msg::AutoFight);
                     }
                     rdev::Key::ControlRight => {
-                        send_all(&sender_vec, Msg::TurnBacK);
+                        send_all(&sender_vec, Msg::AutoClickTaskButton);
                     }
                     _ => {}
                 }
