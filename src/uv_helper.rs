@@ -37,17 +37,17 @@ impl UvInstaller {
         let zip_path = dir.join(ZIP);
         let exe_path = dir.join(EXE);
 
-        // if Self::is_ok("uv") {
-        //     info!("[OK] System uv: {}", Self::ver("uv"));
-        //     return Ok(());
-        // }
-        // if exe_path.exists() {
-        //     if Self::is_ok(exe_path.to_str().unwrap()) {
-        //         info!("[OK] Local uv: {}", Self::ver(exe_path.to_str().unwrap()));
-        //         return Ok(());
-        //     }
-        //     tokio::fs::remove_file(&exe_path).await?;
-        // }
+        if Self::is_ok("uv") {
+            info!("[OK] System uv: {}", Self::ver("uv"));
+            return Ok(());
+        }
+        if exe_path.exists() {
+            if Self::is_ok(exe_path.to_str().unwrap()) {
+                info!("[OK] Local uv: {}", Self::ver(exe_path.to_str().unwrap()));
+                return Ok(());
+            }
+            tokio::fs::remove_file(&exe_path).await?;
+        }
 
         Self::download(&zip_path).await.context("Download failed")?;
         Self::extract(&zip_path, &exe_path).await.context("Extract failed")?;

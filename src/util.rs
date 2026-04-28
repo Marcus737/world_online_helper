@@ -9,7 +9,7 @@ use template_matching::{Image, MatchTemplateMethod, TemplateMatcher, find_extrem
 use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-const FILTER_NAMES: [&str; 4] = ["wgpu_core", "wgpu_hal", "naga", "droidrun_adb"];
+const FILTER_NAMES: [&str; 6] = ["wgpu_core", "wgpu_hal", "naga", "droidrun_adb", "hyper_util", "reqwest"];
 
 pub fn init_logger() {
     let filter = tracing_subscriber::filter::filter_fn(|m| {
