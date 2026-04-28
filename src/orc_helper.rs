@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::{io, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -10,6 +11,7 @@ use crate::config_util;
 #[derive(Debug, serde::Deserialize)]
 pub struct OcrItem {
     pub text: String,
+    
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -26,7 +28,7 @@ impl OcrServer {
     /// 启动 Python 服务器，阻塞等待端口可用后返回
     pub fn launch() -> io::Result<Self> {
         let mut child = Command::new("uv")
-            .current_dir(&config_util::OCR_CONFIG.server_program_path)
+            .current_dir(Path::new(&config_util::OCR_CONFIG.server_program_path))
             .arg("run")
             .arg("server.py")
             .arg("127.0.0.1")

@@ -13,9 +13,10 @@ use thiserror::Error;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-// static BAG_GRID_CENTER_POS_VEC:LazyLock<Vec<Point>> = LazyLock::new(|| get_bag_grid_center_pos_vec());
+const RAND_SLEEP_TIME:[u64; 5]= [400, 500, 450, 350, 550];
 
 fn get_bag_grid_center_pos_vec() -> Vec<Point> {
+
     let point = &config_util::GAME_HELPER_CONFIG.bag_first_grid_center_pos;
     let size = &config_util::GAME_HELPER_CONFIG.bag_grid_size;
     let (mut x, mut y) = (point.x, point.y);
@@ -327,21 +328,6 @@ impl GameHelper {
     
 
     pub async fn handle_change_grid(&mut self, bag_img: DynamicImage) -> anyhow::Result<()> {
-        //先确保当前界面是背包界面
-        // self.image_helper.loop_find_image(
-        //     "背包_移动仓库2", 
-        //     Duration::from_secs(5),
-        //     || async  {
-        //         let point = &config_util::GAME_HELPER_CONFIG.back_pos;
-        //         //点击空白位置关闭界面
-        //         self.adb_device.tap(point.x as i32, point.y as i32).await?;
-        //         tokio::time::sleep(Duration::from_millis(300)).await;
-        //         Ok(image::load_from_memory(&self.adb_device.screencap().await?)?)
-        //     }
-        // )
-        // .await?
-        // .ok_or(anyhow!("找不到背包界面"))?;
-
         //截图
         let new_bag_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
         let pos_vec = get_bag_grid_center_pos_vec();
@@ -362,14 +348,14 @@ impl GameHelper {
             }
             if (same_cnt as f32 / (cmp_len * cmp_len) as f32) < th {
                 //当前格子内容变化了
-                self.clear_bag_v3_inner(x, y).await?;
+                self.clear_bag_v3_inner(x, y, y as usize).await?;
             }
         }
 
         Ok(())
     }
 
-    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32)-> Result<()> {
+    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32, rand_int: usize)-> Result<()> {
         //点击空白关闭界面
         self.click_blank_pos_for_close().await?;
 
@@ -379,7 +365,9 @@ impl GameHelper {
         //点击当前格子
         self.adb_device.tap(x, y).await?;
         //休眠时间要大，不然会把箭头截进去
-        tokio::time::sleep(Duration::from_millis(400)).await;
+        
+        let current_sleep_time = RAND_SLEEP_TIME[rand_int & RAND_SLEEP_TIME.len()];
+        tokio::time::sleep(Duration::from_millis(current_sleep_time)).await;
 
         //背包格子详情
         let bag_grid_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
@@ -440,9 +428,10 @@ impl GameHelper {
         let bag1_pos = &config_util::GAME_HELPER_CONFIG.bag_1_pos;
         self.adb_device.tap(bag1_pos.x, bag1_pos.y).await?;
         tokio::time::sleep(Duration::from_millis(300)).await;
-        for p in get_bag_grid_center_pos_vec() {
-             self.clear_bag_v3_inner(p.x, p.y).await?
+        for Point{x, y} in get_bag_grid_center_pos_vec() {
+             self.clear_bag_v3_inner(x, y, y as usize).await?
         }
+
 
         self.click_blank_pos_for_close().await?;
 
@@ -450,7 +439,7 @@ impl GameHelper {
         self.adb_device.tap(bag2_pos.x, bag2_pos.y).await?;
         tokio::time::sleep(Duration::from_millis(300)).await;
         for Point{x, y} in get_bag_grid_center_pos_vec() {
-             self.clear_bag_v3_inner(x, y).await?
+             self.clear_bag_v3_inner(x, y, x as usize).await?
         }
 
         Ok(())
