@@ -10,6 +10,7 @@ mod funs;
 mod mumu_manager;
 mod ocr_helper;
 mod util;
+mod uv_helper;
 
 const CHANNLE_MAX_MSG_SIZE: usize = 100;
 
@@ -25,6 +26,8 @@ enum Msg {
 #[tokio::main]
 async fn main() -> Result<()> {
     util::init_logger();
+    
+    uv_helper::UvInstaller::install(None).await?;
 
     let app_config = config_util::AppConfig::load_from_file()?;
 

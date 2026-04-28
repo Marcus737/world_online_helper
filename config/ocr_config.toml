@@ -1,5 +1,5 @@
 # OCR 服务器程序路径 (例如 PaddleOCR、RapidOCR 的本地启动脚本)
-server_program_path = "C:\\Users\\10401\\Desktop\\rust_projects\\shi_jie_ol_helper_v3\\py_ocr"
+server_program_path = "py_ocr"
 
 # OCR 服务监听端口
 server_port = 9000
