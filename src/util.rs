@@ -3,7 +3,9 @@ use std::{
     ffi::OsStr,
     fmt::Debug,
     fs,
-    process::{Command, Output}, time::{Duration, SystemTime},
+    path::Path,
+    process::{Command, Output},
+    time::{Duration, SystemTime},
 };
 
 use anyhow::{Ok, Result, anyhow};
@@ -90,8 +92,9 @@ impl ImageHelper {
         template_name: &str,
         timeout: Duration,
         mut get_img_fun: F,
-    ) -> Result<Option<OcrPoint>> 
-    where F : AsyncFnMut() -> anyhow::Result<DynamicImage>
+    ) -> Result<Option<OcrPoint>>
+    where
+        F: AsyncFnMut() -> anyhow::Result<DynamicImage>,
     {
         let start_time = SystemTime::now();
         loop {
@@ -203,14 +206,15 @@ where
     Ok(CommandOutput::new(output)?)
 }
 
-pub fn run_command_with_work_dir<I, S>(
+pub fn run_command_with_work_dir<I, S, P>(
     program_path: &str,
-    work_dir: &str,
+    work_dir: P,
     args: I,
 ) -> Result<CommandOutput>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
+    P: AsRef<Path>,
 {
     let output = Command::new(program_path)
         .current_dir(work_dir)
@@ -258,7 +262,7 @@ impl CommandOutput {
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash)]
 pub struct Point {
     pub x: i32,
-    pub y: i32
+    pub y: i32,
 }
 
 impl Point {
@@ -270,15 +274,14 @@ impl Point {
 #[derive(Debug, Deserialize)]
 pub struct Size {
     pub width: i32,
-    pub height: i32
+    pub height: i32,
 }
 
 impl Size {
-    pub fn new(width: i32, height: i32) -> Self{
+    pub fn new(width: i32, height: i32) -> Self {
         Self { width, height }
     }
 }
-
 
 #[cfg(test)]
 mod test {

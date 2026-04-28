@@ -5,17 +5,18 @@ use config::{Config, Environment, File};
 use serde::Deserialize;
 use tracing::error;
 
-use crate::{funs::{ItemType, Rarity}, util::{Point, Size}};
+use crate::{
+    funs::{ItemType, Rarity},
+    util::{Point, Size},
+};
 
-pub static APP_CONFIG: LazyLock<AppConfig> =
-    LazyLock::new(|| match AppConfig::load_from_file() {
-        Ok(config) => config,
-        Err(e) => {
-            error!("加载配置文件失败:{}", e);
-            panic!("load app config fail");
-        }
-    });
-
+pub static APP_CONFIG: LazyLock<AppConfig> = LazyLock::new(|| match AppConfig::load_from_file() {
+    Ok(config) => config,
+    Err(e) => {
+        error!("加载配置文件失败:{}", e);
+        panic!("load app config fail");
+    }
+});
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
@@ -63,8 +64,7 @@ pub struct GameHelperConfig {
     pub equipment_names: Vec<String>,
     pub remove_item_names: Vec<String>,
     pub remove_item_types: Vec<ItemType>,
-    pub remove_item_raritys: Vec<Rarity>
-    
+    pub remove_item_raritys: Vec<Rarity>,
 }
 
 impl GameHelperConfig {
@@ -82,17 +82,16 @@ impl GameHelperConfig {
 #[derive(Debug, serde::Deserialize)]
 pub struct OcrConfig {
     pub server_program_path: String,
-    pub server_port: u16
+    pub server_port: u16,
 }
 
-pub static OCR_CONFIG: LazyLock<OcrConfig> =
-    LazyLock::new(|| match OcrConfig::load_from_file() {
-        Ok(config) => config,
-        Err(e) => {
-            error!("加载 OCR 配置文件失败，请检查是否遗漏字段: {}", e);
-            panic!("load ocr config fail");
-        }
-    });
+pub static OCR_CONFIG: LazyLock<OcrConfig> = LazyLock::new(|| match OcrConfig::load_from_file() {
+    Ok(config) => config,
+    Err(e) => {
+        error!("加载 OCR 配置文件失败，请检查是否遗漏字段: {}", e);
+        panic!("load ocr config fail");
+    }
+});
 
 impl OcrConfig {
     pub fn load_from_file() -> anyhow::Result<Self> {
@@ -102,7 +101,7 @@ impl OcrConfig {
             // 支持环境变量覆盖，比如设置 OCR_SERVER_PORT=8080
             .add_source(Environment::with_prefix("OCR").separator("_"))
             .build()?;
-        
+
         let config: OcrConfig = conf.try_deserialize()?;
         Ok(config)
     }
@@ -111,7 +110,9 @@ impl OcrConfig {
 #[cfg(test)]
 mod test {
 
-    use crate::config_util::{APP_CONFIG, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig, OCR_CONFIG, OcrConfig};
+    use crate::config_util::{
+        APP_CONFIG, AppConfig, GAME_HELPER_CONFIG, GameHelperConfig, OCR_CONFIG, OcrConfig,
+    };
 
     #[test]
     fn test_get_app_config() {

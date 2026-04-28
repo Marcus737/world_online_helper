@@ -1,22 +1,28 @@
 use std::{
-    env, fmt::Debug, path::Path, time::{Duration, SystemTime}
+    env,
+    fmt::Debug,
+    io::Cursor,
+    path::Path,
+    time::{Duration, SystemTime},
 };
 
 use crate::{
-    config_util, mumu_manager::VmClient, orc_helper::OcrClient, util::{ImageHelper, Point}
+    config_util,
+    mumu_manager::VmClient,
+    ocr_helper::OcrClient,
+    util::{ImageHelper, Point},
 };
 use anyhow::{Result, anyhow};
 use droidrun_adb::AdbServer;
-use image::{DynamicImage, GenericImage, GenericImageView};
+use image::{DynamicImage, EncodableLayout, GenericImage, GenericImageView};
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-const RAND_SLEEP_TIME:[u64; 5]= [400, 500, 450, 350, 550];
+const RAND_SLEEP_TIME: [u64; 5] = [400, 500, 450, 350, 550];
 
 fn get_bag_grid_center_pos_vec() -> Vec<Point> {
-
     let point = &config_util::GAME_HELPER_CONFIG.bag_first_grid_center_pos;
     let size = &config_util::GAME_HELPER_CONFIG.bag_grid_size;
     let (mut x, mut y) = (point.x, point.y);
@@ -35,37 +41,7 @@ fn get_bag_grid_center_pos_vec() -> Vec<Point> {
     v
 }
 
-fn save_detail_rect_img(input: &DynamicImage, id: String) -> Result<String> {
-    let mut gray_img = input.to_luma8();
-
-    let th = 130;
-    let (mut min_x, mut max_x) = (gray_img.width(), 0);
-    let (mut min_y, mut max_y) = (gray_img.height(), 0);
-
-    let mut find = false;
-    for (x, y, p) in gray_img.enumerate_pixels() {
-        if p.0[0] > th {
-            find = true;
-            min_x = min_x.min(x);
-            max_x = max_x.max(x);
-            min_y = min_y.min(y);
-            max_y = max_y.max(y);
-        }
-    }
-
-    if find {
-        let sub_img = gray_img.sub_image(min_x, min_y, max_x - min_x, max_y - min_y);
-        let path = env::current_dir()?.join(format!("sub_image_vm_index{}.png", id));
-        sub_img.to_image().save(&path)?;
-        return Ok(path.display().to_string());
-    } else {
-        return Err(anyhow!("not found sub rect"));
-    }
-}
-
-fn need_remove(
-    info: &ItemInfo
-) -> bool {
+fn need_remove(info: &ItemInfo) -> bool {
     let name_filter = &config_util::GAME_HELPER_CONFIG.remove_item_names;
 
     //在名单上的直接删除
@@ -114,7 +90,7 @@ impl TryFrom<&str> for ItemType {
     type Error = ParseItemTypeError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let vector= &config_util::GAME_HELPER_CONFIG.equipment_names;
+        let vector = &config_util::GAME_HELPER_CONFIG.equipment_names;
 
         let it = match s {
             s if s.contains("任务物品") => Self::QuestItem,
@@ -229,7 +205,7 @@ pub struct GameHelper {
     image_helper: ImageHelper,
     ocr_client: OcrClient,
     pub adb_device: droidrun_adb::AdbDevice,
-    auto_click_task_handle: Option<JoinHandle<()>>
+    auto_click_task_handle: Option<JoinHandle<()>>,
 }
 
 impl GameHelper {
@@ -262,10 +238,9 @@ impl GameHelper {
             image_helper: ImageHelper::new()?,
             adb_device,
             ocr_client,
-            auto_click_task_handle: None
+            auto_click_task_handle: None,
         })
     }
-
 
     async fn remove_item(&mut self, input: &DynamicImage) -> Result<()> {
         debug!("{} 正在删除", self.vm_client.get_vm_index());
@@ -302,12 +277,36 @@ impl GameHelper {
         Ok(())
     }
 
-    pub async fn get_current_item_info_v3(&self, path: &str) -> Result<ItemInfo> {
-        debug!("path:{}", path);
+    pub async fn get_current_item_info_v3(&mut self, input: &DynamicImage) -> Result<ItemInfo> {
+        let mut gray_img = input.to_luma8();
+        let th = 130;
+        let (mut min_x, mut max_x) = (gray_img.width(), 0);
+        let (mut min_y, mut max_y) = (gray_img.height(), 0);
+
+        let mut find = false;
+        for (x, y, p) in gray_img.enumerate_pixels() {
+            if p.0[0] > th {
+                find = true;
+                min_x = min_x.min(x);
+                max_x = max_x.max(x);
+                min_y = min_y.min(y);
+                max_y = max_y.max(y);
+            }
+        }
+
+        if !find {
+            return Err(anyhow!("not found sub rect"));
+        }
+
+        let sub_img = gray_img
+            .sub_image(min_x, min_y, max_x - min_x, max_y - min_y)
+            .to_image();
+        let mut png_bytes = Vec::new();
+        sub_img.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)?;
 
         let start = SystemTime::now();
-        let items = self.ocr_client.recognize(path).await?;
-        // debug!("ocr items:{:?}", items);
+        let items = self.ocr_client.recognize(&png_bytes).await?;
+
         info!(
             "ocr use time: {:?}",
             SystemTime::now().duration_since(start)
@@ -324,8 +323,6 @@ impl GameHelper {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(())
     }
-
-    
 
     pub async fn handle_change_grid(&mut self, bag_img: DynamicImage) -> anyhow::Result<()> {
         //截图
@@ -355,7 +352,7 @@ impl GameHelper {
         Ok(())
     }
 
-    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32, rand_int: usize)-> Result<()> {
+    async fn clear_bag_v3_inner(&mut self, x: i32, y: i32, rand_int: usize) -> Result<()> {
         //点击空白关闭界面
         self.click_blank_pos_for_close().await?;
 
@@ -365,7 +362,7 @@ impl GameHelper {
         //点击当前格子
         self.adb_device.tap(x, y).await?;
         //休眠时间要大，不然会把箭头截进去
-        
+
         let current_sleep_time = RAND_SLEEP_TIME[rand_int & RAND_SLEEP_TIME.len()];
         tokio::time::sleep(Duration::from_millis(current_sleep_time)).await;
 
@@ -373,17 +370,18 @@ impl GameHelper {
         let bag_grid_img = image::load_from_memory(&self.adb_device.screencap().await?)?;
 
         //只要详细信息的部分部分
-        let path = save_detail_rect_img(&bag_grid_img, self.vm_client.get_vm_index())?;
-        let item_info = self.get_current_item_info_v3(&path).await?;
+        let item_info = self.get_current_item_info_v3(&bag_grid_img).await?;
         debug!("item_info：{:?}", item_info);
 
         //如果是空格子就跳过
-        if let None = self.image_helper.get_template_img_pos_by_name(&bag_grid_img, "温馨提示2")? {
+        if let None = self
+            .image_helper
+            .get_template_img_pos_by_name(&bag_grid_img, "温馨提示2")?
+        {
             debug!("当前格子为空");
             self.click_blank_pos_for_close().await?;
             return Ok(());
         };
-
 
         //是否是可删除的
         if need_remove(&item_info) {
@@ -409,7 +407,6 @@ impl GameHelper {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 self.click_blank_pos_for_close().await?;
 
-
                 // 【唯一修改点】：在这里使用 Box::pin 打破交叉递归
                 Box::pin(self.handle_change_grid(old_bag_img)).await?;
                 return Ok(());
@@ -423,30 +420,28 @@ impl GameHelper {
         Ok(())
     }
 
-    pub async fn clear_bag_v3(&mut self) -> anyhow::Result<()>{
+    pub async fn clear_bag_v3(&mut self) -> anyhow::Result<()> {
         //点击背包1
         let bag1_pos = &config_util::GAME_HELPER_CONFIG.bag_1_pos;
         self.adb_device.tap(bag1_pos.x, bag1_pos.y).await?;
         tokio::time::sleep(Duration::from_millis(300)).await;
-        for Point{x, y} in get_bag_grid_center_pos_vec() {
-             self.clear_bag_v3_inner(x, y, y as usize).await?
+        for Point { x, y } in get_bag_grid_center_pos_vec() {
+            self.clear_bag_v3_inner(x, y, y as usize).await?
         }
-
 
         self.click_blank_pos_for_close().await?;
 
         let bag2_pos = &config_util::GAME_HELPER_CONFIG.bag_2_pos;
         self.adb_device.tap(bag2_pos.x, bag2_pos.y).await?;
         tokio::time::sleep(Duration::from_millis(300)).await;
-        for Point{x, y} in get_bag_grid_center_pos_vec() {
-             self.clear_bag_v3_inner(x, y, x as usize).await?
+        for Point { x, y } in get_bag_grid_center_pos_vec() {
+            self.clear_bag_v3_inner(x, y, x as usize).await?
         }
 
         Ok(())
     }
 
-
-    pub async fn auto_click_task(&mut self, on: bool) -> Result<()>{
+    pub async fn auto_click_task(&mut self, on: bool) -> Result<()> {
         if !on {
             if let Some(join_handle) = self.auto_click_task_handle.take() {
                 join_handle.abort();
@@ -457,17 +452,21 @@ impl GameHelper {
 
         //判断是否有组队
         let queue_button_pos = (135, 230);
-        self.adb_device.tap(queue_button_pos.0, queue_button_pos.1).await?;
+        self.adb_device
+            .tap(queue_button_pos.0, queue_button_pos.1)
+            .await?;
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let input = image::load_from_memory(&self.adb_device.screencap().await?)?;
 
-        if let Some(_) = self.image_helper.get_template_img_pos_by_name(&input, "离开队伍")? {
+        if let Some(_) = self
+            .image_helper
+            .get_template_img_pos_by_name(&input, "离开队伍")?
+        {
             info!("当前是队员状态，不需要自动点击任务");
             return Ok(());
         }
 
-        
         let adb_client_clone = self.adb_device.clone();
         let handle = tokio::spawn(async move {
             let target_img = match image::open(Path::new("res/任务按钮存在.png")) {
@@ -475,7 +474,7 @@ impl GameHelper {
                 Err(e) => {
                     error!("加载任务存在按钮图片失败:{}", e);
                     return;
-                },
+                }
             };
             let threshold = 0.8;
             loop {
@@ -483,26 +482,29 @@ impl GameHelper {
                     Ok(data) => data,
                     Err(e) => {
                         error!("获取屏幕截图失败:{}", e);
-                        return ;
-                    },
+                        return;
+                    }
                 };
 
                 let input_img = match image::load_from_memory(&data) {
                     Ok(img) => img,
                     Err(e) => {
                         error!("从内存加载图片失败:{}", e);
-                        return ;
-                    },
+                        return;
+                    }
                 };
                 //对比图片
                 let height = 60;
                 let input_img_height = input_img.height();
-                let start_j =input_img_height / 2;
+                let start_j = input_img_height / 2;
 
                 let mut same_cnt = 0;
                 for j in start_j..input_img_height - height {
                     for k in 0..height {
-                        if input_img.get_pixel(150, j + k).eq(&target_img.get_pixel(0, k)) {
+                        if input_img
+                            .get_pixel(150, j + k)
+                            .eq(&target_img.get_pixel(0, k))
+                        {
                             same_cnt += 1;
                         }
                     }
@@ -513,7 +515,7 @@ impl GameHelper {
                         info!("屏幕存在任务按钮，点击");
                         if let Err(e) = adb_client_clone.keyevent(12).await {
                             error!("发送输入事件失败:{}", e);
-                            return ;
+                            return;
                         };
                         break;
                     }
@@ -521,7 +523,6 @@ impl GameHelper {
 
                 tokio::time::sleep(Duration::from_millis(300)).await;
             }
-
         });
         self.auto_click_task_handle = Some(handle);
         info!("已开启自动点击任务");
@@ -543,22 +544,30 @@ mod test {
     use tracing::info;
 
     use crate::{
-        config_util, funs::GameHelper, mumu_manager::VmClient, orc_helper::OcrClient, util
+        config_util,
+        funs::GameHelper,
+        mumu_manager::VmClient,
+        ocr_helper::{OcrClient, OcrServer},
+        util,
     };
-
 
     #[tokio::test]
     async fn test_new_game_helper() {
         util::init_logger();
-        
+
         let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
         let gh = GameHelper::new(
-                vm_client, 
-                OcrClient::new(&format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port)), 
-                None
-            )
+            vm_client,
+            OcrClient::new(&format!(
+                "127.0.0.1:{}",
+                config_util::OCR_CONFIG.server_port
+            ))
             .await
-            .unwrap();
+            .unwrap(),
+            None,
+        )
+        .await
+        .unwrap();
         info!("{:?}", gh);
     }
 
@@ -566,14 +575,12 @@ mod test {
     async fn test_clear_bag_v3() {
         util::init_logger();
         let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
-        let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
-        let mut gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
+        let server = OcrServer::launch().unwrap();
+        let mut gh = GameHelper::new(vm_client, server.get_client().await.unwrap(), None)
             .await
             .unwrap();
         info!("{:?}", gh);
-        gh.clear_bag_v3()
-        .await
-        .unwrap();
+        gh.clear_bag_v3().await.unwrap();
     }
 
     #[tokio::test]
@@ -581,14 +588,16 @@ mod test {
         util::init_logger();
         let vm_client = VmClient::new(0, &config_util::APP_CONFIG.manager_path);
         let server_addr = format!("127.0.0.1:{}", config_util::OCR_CONFIG.server_port);
-        let gh = GameHelper::new(vm_client, OcrClient::new(&server_addr), None)
+        let gh = GameHelper::new(vm_client, OcrClient::new(&server_addr).await.unwrap(), None)
             .await
             .unwrap();
         let data = gh.adb_device.screencap().await.unwrap();
-        let mut img = image::load_from_memory(&data)
-            .unwrap();
+        let mut img = image::load_from_memory(&data).unwrap();
 
-        img.sub_image(150, 680, 1, 90).to_image().save("任务按钮存在.png").unwrap();
+        img.sub_image(150, 680, 1, 90)
+            .to_image()
+            .save("任务按钮存在.png")
+            .unwrap();
 
         img.save("test_scfeenshot.png").unwrap();
     }

@@ -1,4 +1,4 @@
-use std::{thread};
+use std::thread;
 
 use anyhow::Result;
 use tracing::{error, info};
@@ -8,7 +8,7 @@ use crate::funs::GameHelper;
 mod config_util;
 mod funs;
 mod mumu_manager;
-mod orc_helper;
+mod ocr_helper;
 mod util;
 
 const CHANNLE_MAX_MSG_SIZE: usize = 100;
@@ -32,10 +32,9 @@ async fn main() -> Result<()> {
     util::run_command(&app_config.adb_path, vec!["start-server"])?;
 
     info!("start ocr server");
-    let ocr_server = orc_helper::OcrServer::launch()?;
+    let ocr_server = ocr_helper::OcrServer::launch()?;
 
-
-    let (win_width, win_height)  = &app_config.vm_client_window_size;
+    let (win_width, win_height) = &app_config.vm_client_window_size;
     let (x, y) = &app_config.first_vm_client_pos;
     let mut x2 = *x;
     let client_num = *&app_config.vm_client_num;
@@ -45,8 +44,12 @@ async fn main() -> Result<()> {
 
     for i in 0..client_num {
         let vm_client = mumu_manager::VmClient::new(i, &app_config.manager_path);
-        let mut game_helper =
-            GameHelper::new(vm_client, ocr_server.get_client(), Some(&app_config.app_package_names[i])).await?;
+        let mut game_helper = GameHelper::new(
+            vm_client,
+            ocr_server.get_client().await?,
+            Some(&app_config.app_package_names[i]),
+        )
+        .await?;
         game_helper.vm_client.set_layout_window(
             Some(x2),
             Some(*y),
@@ -81,7 +84,9 @@ async fn main() -> Result<()> {
                             }
                         }
                         Msg::AutoClickTaskButton => {
-                            if let Err(e) = game_helper.auto_click_task(auto_click_task_button_on).await {
+                            if let Err(e) =
+                                game_helper.auto_click_task(auto_click_task_button_on).await
+                            {
                                 error!("自动点击任务失败:{}", e);
                             }
                             auto_click_task_button_on = !auto_click_task_button_on;
