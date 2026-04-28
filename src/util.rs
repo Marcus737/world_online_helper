@@ -1,18 +1,12 @@
 use std::{
-    collections::HashMap,
-    ffi::OsStr,
-    fmt::Debug,
-    fs,
-    path::Path,
-    process::{Command, Output},
-    time::{Duration, SystemTime},
+    collections::HashMap, ffi::OsStr, fmt::Debug, fs, path::Path, process::{Command, Output}, sync::LazyLock, time::{Duration, SystemTime}
 };
 
 use anyhow::{Ok, Result, anyhow};
-use image::DynamicImage;
+use image::{DynamicImage, ImageBuffer};
 use serde::{Deserialize, Serialize};
 use template_matching::{Image, MatchTemplateMethod, TemplateMatcher, find_extremes};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const FILTER_NAMES: [&str; 4] = ["wgpu_core", "wgpu_hal", "naga", "droidrun_adb"];
@@ -34,6 +28,7 @@ pub fn init_logger() {
         .unwrap();
 }
 
+
 #[derive(Debug, PartialEq)]
 pub struct OcrPoint {
     pub x: u32,
@@ -46,7 +41,6 @@ pub struct OcrPoint {
 
 pub struct ImageHelper {
     matcher: TemplateMatcher,
-    loaded_imgs: HashMap<String, DynamicImage>,
 }
 
 impl Debug for ImageHelper {
@@ -55,8 +49,10 @@ impl Debug for ImageHelper {
     }
 }
 
-fn load_img() -> Result<HashMap<String, DynamicImage>> {
-    let mut map = HashMap::new();
+static TEMPLATE_IMGS:LazyLock<HashMap<String, ImageBuffer<image::Luma<f32>, Vec<f32>>>> = LazyLock::new(|| load_img().unwrap());
+
+fn load_img() -> Result<HashMap<String, ImageBuffer<image::Luma<f32>, Vec<f32>>>> {
+    let mut map: HashMap<String, ImageBuffer<image::Luma<f32>, Vec<f32>>> = HashMap::new();
     for item in fs::read_dir("res")? {
         let dir_entry = item?;
         if dir_entry.path().is_file() {
@@ -72,7 +68,7 @@ fn load_img() -> Result<HashMap<String, DynamicImage>> {
                 .ok_or_else(|| anyhow!("cannot convert ostring to &str"))?;
 
             let dyn_img = image::open(path)?;
-            map.insert(filename.to_string(), dyn_img);
+            map.insert(filename.to_string(), dyn_img.to_luma32f());
             info!("loaded template filename:{}\npath:{}", filename, path);
         }
     }
@@ -83,7 +79,6 @@ impl ImageHelper {
     pub fn new() -> Result<Self> {
         Ok(Self {
             matcher: TemplateMatcher::new(),
-            loaded_imgs: load_img()?,
         })
     }
 
@@ -115,14 +110,13 @@ impl ImageHelper {
         input: &DynamicImage,
         template_name: &str,
     ) -> Result<Option<OcrPoint>> {
-        let template_img = self
-            .loaded_imgs
+        let template_img = TEMPLATE_IMGS
             .get(template_name)
             .ok_or(anyhow!("template_name {} not found", template_name))?;
 
         self.matcher.match_template(
             Image::from(&input.to_luma32f()),
-            Image::from(&template_img.to_luma32f()),
+            Image::from(template_img),
             MatchTemplateMethod::SumOfSquaredDifferences,
         );
         let result = self
@@ -147,54 +141,7 @@ impl ImageHelper {
         Ok(Some(point))
     }
 
-    pub fn get_template_img_pos_from_file(
-        &mut self,
-        input_path: &str,
-        template_path: &str,
-        method: MatchTemplateMethod,
-    ) -> Result<Option<OcrPoint>> {
-        let input = image::open(input_path)?;
-        let template = image::open(template_path)?;
-        self.get_template_img_pos(&input, &template, method)
-    }
-
-    pub fn get_template_img_pos(
-        &mut self,
-        input: &DynamicImage,
-        template: &DynamicImage,
-        method: MatchTemplateMethod,
-    ) -> Result<Option<OcrPoint>> {
-        self.matcher.match_template(
-            Image::from(&input.to_luma32f()),
-            Image::from(&template.to_luma32f()),
-            method,
-        );
-        let result = self
-            .matcher
-            .wait_for_result()
-            .ok_or(anyhow!("template image not found on input image!"))?;
-        let extremes = find_extremes(&result);
-        //min_value<300
-        if extremes.min_value > 300.0 {
-            return Ok(None);
-        }
-
-        //一定大于100且小于图片得高度减去100
-        if extremes.min_value_location.1 < 100
-            || extremes.min_value_location.1 > input.height() - 100
-        {
-            return Ok(None);
-        }
-
-        let point = OcrPoint {
-            x: extremes.min_value_location.0,
-            y: extremes.min_value_location.1,
-            center_x: extremes.min_value_location.0 + template.width() / 2,
-            center_y: extremes.min_value_location.1 + template.height() / 2,
-            value: extremes.min_value,
-        };
-        Ok(Some(point))
-    }
+ 
 }
 
 pub fn run_command<I, S>(program_path: &str, args: I) -> Result<CommandOutput>
